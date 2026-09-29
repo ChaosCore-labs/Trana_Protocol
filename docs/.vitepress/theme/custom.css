@@ -1,0 +1,422 @@
+/**
+ * Gruvbox Material Dark Hard for the site.
+ *
+ * Dark-only by design (`appearance: false` in config.mts): VitePress never adds
+ * its `.dark` class, so the palette lives on `:root` and there is no light
+ * counterpart to keep in step.
+ *
+ * Values are literals because CSS cannot import `palette.ts`; that file is the
+ * source of truth and `tests/theme.test.ts` fails if the two ever disagree.
+ *
+ * VitePress derives most of its own variables from the primitives below
+ * (`--vp-custom-block-*-bg` from `--vp-c-*-soft`, `--vp-code-block-bg` from
+ * `--vp-c-bg-alt`), so overriding the palette cascades through the UI.
+ *
+ * @see https://github.com/sainnhe/gruvbox-material
+ */
+
+:root {
+  /* Dark-only, and VitePress's own `:root:not(.dark)` would otherwise leave
+     native scrollbars and form controls light. That rule outranks a plain
+     `:root`, so this one property keeps the important flag. */
+  color-scheme: dark !important;
+}
+
+/**
+ * Colors: Solid
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-white: #f9f5d7;
+  --vp-c-black: #1d2021;
+  --vp-c-neutral: #d4be98;
+  --vp-c-neutral-inverse: #1d2021;
+}
+
+/**
+ * Colors: Background
+ *
+ * "Hard" means adjacency: bg0 (#1d2021) sits directly against bgDim (#141617)
+ * with no intermediate step, so panels read as darker wells in the page.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-bg: #1d2021;
+  --vp-c-bg-alt: #141617;
+  --vp-c-bg-elv: #282828;
+  --vp-c-bg-soft: #282828;
+}
+
+/**
+ * Colors: Borders
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-border: #504945;
+  --vp-c-divider: #3c3836;
+  --vp-c-gutter: #141617;
+}
+
+/**
+ * Colors: Text
+ *
+ * text-1 is gruvbox's fg0, text-2 the mid grey, text-3 the dimmest tone that
+ * still clears 3:1 against the page (asserted in tests/theme.test.ts).
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-text-1: #d4be98;
+  --vp-c-text-2: #a89984;
+  --vp-c-text-3: #7c6f64;
+}
+
+/**
+ * Colors: Palette
+ *
+ * One accent per gruvbox hue. `-1` is used for text on a soft background, `-2`
+ * for hover, `-3` for solid backgrounds, and `-soft` must stay translucent so
+ * accents can stack (an inline code span inside a custom block, for example).
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-gray-1: #a89984;
+  --vp-c-gray-2: #928374;
+  --vp-c-gray-3: #7c6f64;
+  --vp-c-gray-soft: color-mix(in srgb, #928374 16%, transparent);
+
+  --vp-c-indigo-1: #7daea3;
+  --vp-c-indigo-2: color-mix(in srgb, #7daea3 85%, #d4be98);
+  --vp-c-indigo-3: #7daea3;
+  --vp-c-indigo-soft: color-mix(in srgb, #7daea3 16%, transparent);
+
+  --vp-c-purple-1: #d3869b;
+  --vp-c-purple-2: color-mix(in srgb, #d3869b 85%, #d4be98);
+  --vp-c-purple-3: #d3869b;
+  --vp-c-purple-soft: color-mix(in srgb, #d3869b 16%, transparent);
+
+  --vp-c-green-1: #a9b665;
+  --vp-c-green-2: color-mix(in srgb, #a9b665 85%, #d4be98);
+  --vp-c-green-3: #a9b665;
+  --vp-c-green-soft: color-mix(in srgb, #a9b665 16%, transparent);
+
+  --vp-c-yellow-1: #d8a657;
+  --vp-c-yellow-2: color-mix(in srgb, #d8a657 85%, #d4be98);
+  --vp-c-yellow-3: #d8a657;
+  --vp-c-yellow-soft: color-mix(in srgb, #d8a657 16%, transparent);
+
+  --vp-c-red-1: #ea6962;
+  --vp-c-red-2: color-mix(in srgb, #ea6962 85%, #d4be98);
+  --vp-c-red-3: #ea6962;
+  --vp-c-red-soft: color-mix(in srgb, #ea6962 16%, transparent);
+
+  --vp-c-orange-1: #e78a4e;
+  --vp-c-orange-2: color-mix(in srgb, #e78a4e 85%, #d4be98);
+  --vp-c-orange-3: #e78a4e;
+  --vp-c-orange-soft: color-mix(in srgb, #e78a4e 16%, transparent);
+}
+
+/**
+ * Colors: Function
+ *
+ * Links use aqua (gruvbox material's signature UI accent); green reads as its
+ * natural hover neighbour. Semantic blocks borrow the matching hue.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-brand-1: #89b482;
+  --vp-c-brand-2: color-mix(in srgb, #a9b665 85%, #d4be98);
+  --vp-c-brand-3: #89b482;
+  --vp-c-brand-soft: color-mix(in srgb, #89b482 16%, transparent);
+
+  --vp-c-success-1: var(--vp-c-green-1);
+  --vp-c-success-2: var(--vp-c-green-2);
+  --vp-c-success-3: var(--vp-c-green-3);
+  --vp-c-success-soft: var(--vp-c-green-soft);
+
+  --vp-c-tip-1: var(--vp-c-brand-1);
+  --vp-c-tip-2: var(--vp-c-brand-2);
+  --vp-c-tip-3: var(--vp-c-brand-3);
+  --vp-c-tip-soft: var(--vp-c-brand-soft);
+
+  --vp-c-note-1: var(--vp-c-indigo-1);
+  --vp-c-note-2: var(--vp-c-indigo-2);
+  --vp-c-note-3: var(--vp-c-indigo-3);
+  --vp-c-note-soft: var(--vp-c-indigo-soft);
+
+  --vp-c-important-1: var(--vp-c-purple-1);
+  --vp-c-important-2: var(--vp-c-purple-2);
+  --vp-c-important-3: var(--vp-c-purple-3);
+  --vp-c-important-soft: var(--vp-c-purple-soft);
+
+  --vp-c-warning-1: var(--vp-c-yellow-1);
+  --vp-c-warning-2: var(--vp-c-yellow-2);
+  --vp-c-warning-3: var(--vp-c-yellow-3);
+  --vp-c-warning-soft: var(--vp-c-yellow-soft);
+
+  --vp-c-caution-1: var(--vp-c-orange-1);
+  --vp-c-caution-2: var(--vp-c-orange-2);
+  --vp-c-caution-3: var(--vp-c-orange-3);
+  --vp-c-caution-soft: var(--vp-c-orange-soft);
+
+  --vp-c-danger-1: var(--vp-c-red-1);
+  --vp-c-danger-2: var(--vp-c-red-2);
+  --vp-c-danger-3: var(--vp-c-red-3);
+  --vp-c-danger-soft: var(--vp-c-red-soft);
+
+  --vp-c-sponsor: #d3869b;
+}
+
+/**
+ * Colors: Buttons
+ *
+ * VitePress points button text at `--vp-c-white`, the value of which flips with
+ * the appearance setting. This theme is dark-only, so the brand button needs the
+ * dark ink explicitly: cream on #89b482 is 3.3:1, while #1d2021 on it is 6.9:1.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-button-brand-text: var(--vp-c-neutral-inverse);
+  --vp-button-brand-hover-text: var(--vp-c-neutral-inverse);
+  --vp-button-brand-active-text: var(--vp-c-neutral-inverse);
+}
+
+/**
+ * Code
+ *
+ * VitePress points code blocks at `--vp-c-bg-alt`, which is already the darker
+ * panel colour. The line/word highlights use gruvbox's dedicated "visual"
+ * backgrounds, and diffs its diff backgrounds.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-code-block-bg: #141617;
+  --vp-code-line-highlight-color: #32302f;
+  --vp-code-line-number-color: #7c6f64;
+  --vp-code-line-diff-add-color: #32361a;
+  --vp-code-line-diff-remove-color: #3c1f1e;
+  --vp-code-copy-code-bg: #282828;
+  --vp-code-copy-code-hover-bg: #3c3836;
+  --vp-code-copy-code-border-color: #3c3836;
+}
+
+/**
+ * Components
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-custom-block-tip-border: color-mix(in srgb, #89b482 35%, transparent);
+  --vp-custom-block-note-border: color-mix(in srgb, #7daea3 35%, transparent);
+  --vp-custom-block-important-border: color-mix(in srgb, #d3869b 35%, transparent);
+  --vp-custom-block-warning-border: color-mix(in srgb, #d8a657 35%, transparent);
+  --vp-custom-block-caution-border: color-mix(in srgb, #e78a4e 35%, transparent);
+  --vp-custom-block-danger-border: color-mix(in srgb, #ea6962 35%, transparent);
+  --vp-custom-block-info-border: color-mix(in srgb, #7daea3 35%, transparent);
+  --vp-custom-block-details-border: #3c3836;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #a9b665 0%, #89b482 40%, #d8a657 100%);
+  --vp-home-hero-image-background-image: radial-gradient(
+    closest-side,
+    color-mix(in srgb, #89b482 40%, transparent),
+    transparent
+  );
+  --vp-home-hero-image-filter: none;
+}
+
+/* Text selection picks up the gruvbox "visual" tint rather than the browser default. */
+::selection {
+  background-color: #473c29;
+  color: #d4be98;
+}
+
+/**
+ * Mermaid
+ *
+ * Diagram colours come from mermaid's own `themeVariables` (see `mermaid.ts`).
+ * These rules only cover the container: the "unrendered" state shows the raw
+ * definition legibly instead of as a broken code block, and the rendered state
+ * drops the box so the SVG sits directly on the page.
+ */
+
+pre.mermaid {
+  margin: 16px 0;
+  padding: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background-color: var(--vp-c-bg-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+pre.mermaid[data-processed='true'] {
+  border-color: transparent;
+  background-color: transparent;
+  padding: 0;
+}
+
+pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+/**
+ * Fullscreen diagram viewer
+ *
+ * Diagrams that fit the column are left exactly as they are: the whole diagram
+ * is on the page, scaled to the column. The ones that get scaled below
+ * readability (the end-to-end sequence renders at 40%) become clickable and
+ * open this viewer, where the svg sits at natural size and is moved with a
+ * transform — so every zoom step stays crisp instead of magnifying rasterised
+ * output, and opening the viewer never hides part of the diagram.
+ *
+ * Backgrounds stay on `--vp-c-bg`: diagrams are drawn transparent, so any other
+ * surface would show as a seam against the drawing.
+ */
+
+pre.mermaid[data-viewer='true'] {
+  position: relative;
+  overflow: visible;
+  cursor: zoom-in;
+}
+
+pre.mermaid[data-viewer='true']:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+
+/* Mirrors the copy button VitePress puts on code blocks: there when the reader
+   looks for it, never in the tab order or the accessibility tree — the diagram
+   itself carries the role and the label. */
+.dz-expand {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  background-color: var(--vp-c-bg-alt);
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+pre.mermaid[data-viewer='true']:hover .dz-expand,
+pre.mermaid[data-viewer='true']:focus-within .dz-expand {
+  opacity: 1;
+}
+
+.dz-expand:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.dz-viewer {
+  background-color: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+}
+
+/* Fullscreen, and explicitly so. The user-agent centres a modal dialog with
+   `margin: auto`, which this page's CSS reset overrides to 0 — and a fixed box
+   with `inset: 0`, a definite size and no auto margin is not centred, it is
+   welded to the top-left corner. Filling the viewport needs no centring at all,
+   and it is what a reader wants from a diagram they clicked in order to read
+   it: every pixel that is not the toolbar goes to the drawing. */
+.dz-viewer[open] {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.dz-viewer::backdrop {
+  background-color: rgb(0 0 0 / 72%);
+}
+
+.dz-viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+/* Pushed to the far left of the bar, with the controls to its right. */
+.dz-viewer-hint {
+  margin: 0 auto 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .dz-viewer-hint {
+    display: none;
+  }
+}
+
+.dz-button {
+  padding: 2px 8px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  background-color: var(--vp-c-bg-alt);
+  color: var(--vp-c-text-1);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.dz-button:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.dz-viewer-close {
+  margin-left: 4px;
+}
+
+.dz-level {
+  min-width: 3.5em;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dz-viewer-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--vp-c-bg);
+  cursor: grab;
+  touch-action: none;
+}
+
+.dz-viewer-stage:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: -2px;
+}
+
+.dz-viewer-stage--dragging {
+  cursor: grabbing;
+}
+
+.dz-viewer-stage > svg {
+  margin: 0;
+}

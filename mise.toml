@@ -1,0 +1,9 @@
+[tools]
+# "github:anza-xyz/agave" = { version = "v4.1.2", matching = "tar.bz2", bin_path = "solana-release/bin" }
+"github:anza-xyz/agave" = { version = "latest", matching = "tar.bz2", bin_path = "solana-release/bin" }
+"github:otter-sec/anchor" = "latest"
+"github:solana-foundation/surfpool" = "latest"
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-edit" = "latest"
+sccache = "latest"
+bun = "latest"
