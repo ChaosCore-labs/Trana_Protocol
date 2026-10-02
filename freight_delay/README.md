@@ -13,7 +13,7 @@ The pool is **fully collateralised at all times**: every outstanding payout is
 backed by capital the pool already holds, and that invariant is re-checked after
 every state change.
 
-Program ID: `HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP`
+Program ID: `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`
 
 ## Layout
 

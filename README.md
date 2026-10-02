@@ -15,7 +15,7 @@ every state change.
 This repository holds the Anchor program and its documentation site. There is
 no frontend, SDK, or indexer.
 
-Program ID: `HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP`
+Program ID: `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`
 
 ## Layout
 

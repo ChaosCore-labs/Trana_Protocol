@@ -11,7 +11,7 @@ pub use events::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP");
+declare_id!("4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs");
 
 #[program]
 pub mod freight_delay {

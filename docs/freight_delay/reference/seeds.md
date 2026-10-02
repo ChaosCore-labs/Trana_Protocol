@@ -38,7 +38,7 @@ emitted into the IDL and visible to clients.
 | `Policy` | `[b"policy", config, policy_id_le]` | `policy_id` little-endian |
 | `DeliveryReport` | `[b"delivery", shipment_id_le]` | **Not** namespaced by config |
 
-The program id is `HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP`.
+The program id is `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
 
 ::: danger Seed literals are frozen
 Changing any literal, or the byte encoding of a `u64` argument, changes every
@@ -59,7 +59,7 @@ With `@solana/kit`:
 ```ts
 import { getProgramDerivedAddress, getAddressEncoder, address } from '@solana/kit'
 
-const PROGRAM_ID = address('HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP')
+const PROGRAM_ID = address('4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs')
 const encoder = getAddressEncoder()
 const bytes = (n: bigint): Uint8Array => {
   const out = new Uint8Array(8)

@@ -7,7 +7,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-freight_delay = "HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP"
+freight_delay = "4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs"
 
 [provider]
 cluster = "localnet"

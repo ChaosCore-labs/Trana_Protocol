@@ -3,8 +3,8 @@
 target
 **/*.rs.bk
 node_modules
-.vitepress/dist
-.vitepress/cache
+docs/.vitepress/dist
+docs/.vitepress/cache/
 *.local
 test-ledger
 .surfpool

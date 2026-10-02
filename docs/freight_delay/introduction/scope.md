@@ -59,7 +59,7 @@ them.
 
 The program has never been deployed to a public cluster in this repository's
 history. `Anchor.toml` configures `localnet` only, with the program id pinned as
-`HKygNZod2WmpPzDVHjcdv7kpd74t68zH9sE4Kp1mxAQP`.
+`4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
 
 Test coverage is 15 LiteSVM integration tests covering the happy path of every
 instruction plus several rejection cases. The suite passes. It is not a security
