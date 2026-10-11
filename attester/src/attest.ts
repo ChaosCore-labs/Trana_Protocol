@@ -24,7 +24,8 @@ export interface SignedAttestation {
 export interface AttestOptions {
   /** Replay guard: binds the signature to one policy (see CHA-16). */
   nonce: bigint;
-  privateKeyDer: Uint8Array;
+  /** Raw 32-byte ed25519 seed. */
+  privateKey: Uint8Array;
 }
 
 /**
@@ -49,7 +50,7 @@ export async function attest(
   return {
     payload,
     message: encodePayload(payload),
-    signature: signPayload(payload, options.privateKeyDer),
+    signature: signPayload(payload, options.privateKey),
     source: source.name,
     simulated: source.simulated ?? false,
   };

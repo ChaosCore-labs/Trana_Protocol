@@ -54,12 +54,12 @@ describe("ed25519 signing", () => {
     assert.equal(verifyPayload(SAMPLE, signature, publicKey), true);
   });
 
-  it("derives the same public key from a seed via either path", () => {
-    const seed = new Uint8Array(32).fill(9);
-    const der = privateKeyFromSeed(seed);
-    const fromDer = publicKeyFromPrivate(der);
-    const signature = signPayload(SAMPLE, der);
-    assert.equal(verifyPayload(SAMPLE, signature, fromDer), true);
+  it("derives the public key from a fixed seed", () => {
+    const seed = privateKeyFromSeed(new Uint8Array(32).fill(9));
+    const publicKey = publicKeyFromPrivate(seed);
+    assert.equal(publicKey.length, 32);
+    const signature = signPayload(SAMPLE, seed);
+    assert.equal(verifyPayload(SAMPLE, signature, publicKey), true);
   });
 
   it("fails verification when a field is tampered with", () => {
@@ -115,7 +115,7 @@ describe("attest", () => {
       arrivals: { "77": { actualDelivery: 1_760_000_000n, terminalCode: 3n } },
     });
 
-    const result = await attest(source, 77n, { nonce: 5n, privateKeyDer: privateKey });
+    const result = await attest(source, 77n, { nonce: 5n, privateKey });
     assert.ok(result);
     assert.equal(result.simulated, true);
     assert.equal(result.source, "simulated");
@@ -131,14 +131,14 @@ describe("attest", () => {
   it("returns null when the shipment has not arrived", async () => {
     const { privateKey } = generateAttesterKeypair();
     const source = new SimulatedSource();
-    const result = await attest(source, 1n, { nonce: 0n, privateKeyDer: privateKey });
+    const result = await attest(source, 1n, { nonce: 0n, privateKey });
     assert.equal(result, null);
   });
 
   it("binds the signature to the nonce", async () => {
     const { publicKey, privateKey } = generateAttesterKeypair();
     const source = new SimulatedSource({ arrivals: { "1": { actualDelivery: 1n } } });
-    const result = await attest(source, 1n, { nonce: 10n, privateKeyDer: privateKey });
+    const result = await attest(source, 1n, { nonce: 10n, privateKey });
     assert.ok(result);
     // Same payload, different nonce: the captured signature must be useless.
     assert.equal(verifyPayload({ ...result.payload, nonce: 11n }, result.signature, publicKey), false);
