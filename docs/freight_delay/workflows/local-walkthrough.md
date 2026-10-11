@@ -60,14 +60,15 @@ time.
 | File | Role |
 |---|---|
 | `scripts/lifecycle.ts` | the walkthrough |
-| `src/program.ts` | hand-encoded Anchor client (discriminators + Borsh args) |
-| `scripts/lifecycle.test.ts` | asserts the encoders and account offsets match the program |
+| `client/program.ts` | harness over the generated client (builders, PDAs, account codecs) |
+| `client/generated/` | Codama client generated from `target/idl/freight_delay.json` |
+| `scripts/codegen.ts` | regenerates `client/generated` |
 
-`src/program.ts` writes instruction data directly instead of using an IDL
-coder, so the offsets it reads are hand-written. `lifecycle.test.ts` re-derives
-the discriminators from `target/idl/freight_delay.json` and the field layout
-from `state.rs`, so a program change fails a test rather than producing a script
-that quietly misreads accounts.
+`client/program.ts` builds its instructions with the clients Codama generates
+from the program IDL, so discriminators, account order and Borsh layouts come
+from the program rather than being written out by hand. After changing the
+program, run `anchor build && bun run codegen`. The ed25519 precompile
+instruction in that file is the one thing the IDL cannot describe.
 
 ## Related
 

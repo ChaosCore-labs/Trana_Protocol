@@ -33,8 +33,10 @@ freight_delay/
 │   │   ├── error.rs          # Freight DelayError — 12 flat variants
 │   │   └── events.rs         # six events (settle_policy emits two)
 │   └── tests/test_freight_delay.rs  # 18 integration tests (7 more unit tests in shared.rs)
+├── client/program.ts         # lifecycle harness over the generated client
+├── client/generated/         # Codama client generated from target/idl — do not hand-edit
 ├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
-├── src/program.ts            # hand-encoded Anchor client used by the script
+├── scripts/codegen.ts        # regenerates client/generated from the IDL
 └── runbooks/                 # Surfpool deployment scaffolding (has its own README)
 ```
 
