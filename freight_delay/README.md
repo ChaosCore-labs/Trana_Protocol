@@ -32,7 +32,9 @@ freight_delay/
 │   │   ├── constants.rs      # the four PDA seeds and FEE_DENOMINATOR
 │   │   ├── error.rs          # Freight DelayError — 12 flat variants
 │   │   └── events.rs         # six events (settle_policy emits two)
-│   └── tests/test_freight_delay.rs  # 16 LiteSVM tests
+│   └── tests/test_freight_delay.rs  # 25 LiteSVM tests
+├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
+├── src/program.ts            # hand-encoded Anchor client used by the script
 └── runbooks/                 # Surfpool deployment scaffolding (has its own README)
 ```
 

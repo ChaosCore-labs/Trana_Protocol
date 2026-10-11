@@ -64,7 +64,10 @@ export default defineConfig({
         },
         {
           text: 'Workflows',
-          items: [{ text: 'Pool Lifecycle', link: '/freight_delay/workflows/lifecycle' }],
+          items: [
+            { text: 'Pool Lifecycle', link: '/freight_delay/workflows/lifecycle' },
+            { text: 'Local Walkthrough', link: '/freight_delay/workflows/local-walkthrough' },
+          ],
         },
         {
           text: 'Reference',
