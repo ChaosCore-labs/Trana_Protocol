@@ -29,7 +29,7 @@ import {
   readPool,
   treasuryPda,
   type Harness,
-} from "../src/program.ts";
+} from "../client/program.ts";
 
 const PROGRAM_NAME = "freight_delay";
 const DECIMALS = 6;
@@ -92,7 +92,7 @@ const treasury = await treasuryPda(programId, config);
 const h: Harness = {
   client,
   programId,
-  admin: admin.address,
+  admin,
   usdcMint: usdcMint.address,
   config,
   treasury,
@@ -222,7 +222,7 @@ for (const s of scenarios) {
     actualDelivery: arrival,
     terminalCode: 4201n,
     nonce: s.id,
-    crank: admin.address,
+    crank: admin,
     insured: shipper.address,
   });
 
@@ -257,7 +257,7 @@ const { instructions: onTimeIx } = await deliveryInstructions(h, {
   actualDelivery: expectedDelivery - BigInt(DAY),
   terminalCode: 4201n,
   nonce: 1n,
-  crank: admin.address,
+  crank: admin,
   insured: shipper.address,
 });
 await client.sendTransaction(onTimeIx);
