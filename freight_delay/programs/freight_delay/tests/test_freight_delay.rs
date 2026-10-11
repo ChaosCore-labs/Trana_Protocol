@@ -809,3 +809,51 @@ fn settle_accepts_an_attestation_signed_by_the_typescript_attester() {
     assert!(policy.is_settled && policy.is_paid);
 }
 
+
+#[test]
+fn settle_releases_locked_risk_without_any_timeout_path() {
+    // The "locked risk forever" question, pinned down. `buy_policy` requires
+    // expected_delivery > now and `settle_policy` requires now >= deadline, and
+    // the clock only moves forward, so every policy becomes settleable once its
+    // deadline passes. There is no timeout instruction — the settlement path is
+    // just the ordinary one, taken late.
+    //
+    // This test asserts that taken-late path works, and that it releases the
+    // risk rather than paying: the arrival is inside the grace period.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
+    );
+
+    // Long past the deadline that a real policy would have been settled by.
+    set_ts(&mut env.svm, deadline() + 400 * 24 * 60 * 60);
+
+    let before = read_config(&env.svm, &env.config);
+    assert_eq!(before.total_locked_risk, 500_000 * UNIT);
+
+    // An on-time arrival, attested long after the fact, still settles.
+    assert!(
+        settle_policy(&mut env, 1, deadline() - 100).is_ok(),
+        "a matured policy must be settleable with any attested arrival"
+    );
+
+    let after = read_config(&env.svm, &env.config);
+    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
+
+    assert!(policy.is_settled, "settled");
+    assert!(!policy.is_paid, "the arrival was within grace, so no payout");
+    assert_eq!(
+        after.total_locked_risk,
+        before.total_locked_risk - 500_000 * UNIT,
+        "the payout is no longer locked"
+    );
+    assert_eq!(
+        after.total_capital, before.total_capital,
+        "an untriggered settle returns capital to free capacity"
+    );
+    assert_eq!(
+        after.free_capital(),
+        after.total_capital,
+        "nothing is left locked once settled"
+    );
+}

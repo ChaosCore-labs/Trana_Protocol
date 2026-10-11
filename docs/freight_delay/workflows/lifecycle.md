@@ -82,8 +82,14 @@ holds capital, and more capital can arrive while policies are live.
 Stage 4 is deliberately not a transaction. The attester signs the arrival and
 stops; nothing is written on chain until a crank relays that signature during
 settlement. So the signature is not a prerequisite step so much as an input to
-stage 5 — and a policy whose shipment is never attested simply never settles,
-because there is no timeout path (see CHA-15).
+stage 5.
+
+Stage 5 is permissionless but not automatic. Nothing calls `settle_policy` on
+its own, so a policy waits for a crank — and its payout stays in
+`total_locked_risk`, outside `free_capital`, until one runs. Every policy does
+become settleable once its deadline passes, so this is a liveness concern rather
+than a stranded-capital one; see [Invariants](/freight_delay/protocol/invariants)
+for why.
 
 ## Pool state machine
 
@@ -118,9 +124,16 @@ stateDiagram-v2
 ```
 
 `Late` and `OnTime` are both terminal, distinguished by the `is_paid` flag.
-`Placed` is terminal in practice for any policy whose shipment is never attested:
-`settle_policy` needs a valid signed attestation, so the transition never becomes
-available and the payout stays locked.
+
+`Placed` is the transient state. Both transitions out of it require a valid
+signed attestation, but every policy acquires one option to leave: once
+`now >= expected_delivery + grace_period`, any attested arrival — early or late —
+is enough, and a non-triggering arrival still releases the locked risk. A policy
+sits in `Placed` only until a crank settles it.
+
+The state machine has no timeout edge, by design: the trigger is terminal
+arrival, and a timeout would pay in the total-loss case that cargo insurance
+already covers.
 
 ## Instruction dependency graph
 

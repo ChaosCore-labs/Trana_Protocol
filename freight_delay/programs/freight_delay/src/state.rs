@@ -59,6 +59,11 @@ pub struct Policy {
     /// SLA delivery timestamp the shipment was quoted.
     pub expected_delivery: i64,
     /// Slack after `expected_delivery` before a late arrival triggers a payout.
+    ///
+    /// Any non-negative value is accepted. Keep it well under the corridor's
+    /// transit time: a delay can only be as large as the transit itself, so a
+    /// grace period near that bound yields a policy that can practically never
+    /// trigger. This is a product-parameter question, not an enforced limit.
     pub grace_period: i64,
     pub payout_amount: u64,
     pub premium_amount: u64,

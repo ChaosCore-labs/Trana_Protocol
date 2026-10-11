@@ -1,6 +1,6 @@
 # Instructions
 
-Six instructions. `lib.rs` contains no logic — each `#[program]` function
+Five instructions. `lib.rs` contains no logic — each `#[program]` function
 forwards its arguments and `ctx.bumps` into the handler in the instruction's own
 module, where the guards and arithmetic live.
 
@@ -165,8 +165,10 @@ The risk is released on **both** branches. A non-triggered settle leaves
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.
-`now >= deadline` has no upper bound, so a policy can be settled long after the
-deadline, and until it is, its payout stays locked.
+The comparison has no upper bound, but it does not need one: `buy_policy`
+requires `expected_delivery > now` and the clock is monotonic, so the gate is
+satisfied permanently once the deadline passes. Every policy therefore has a
+settlement path; what it may lack is a crank to take it.
 
 ## `withdraw_capital`
 

@@ -74,8 +74,9 @@ arguably an internal-consistency failure rather than a withdrawal problem.
 
 **`PolicyNotMature` is the deadline gate.** Settlement is refused until
 `Clock::unix_timestamp >= expected_delivery + grace_period`. There is no upper
-bound: a policy can be settled long after that deadline, and until it is, its
-payout stays locked.
+bound: a policy can be settled at any point after that deadline, and the gate is
+satisfied for good once passed, because the clock only moves forward. Until
+someone settles, the payout stays in `total_locked_risk`.
 
 **`DeliveryMismatch` now guards a supplied value.** Settlement no longer derives
 the attested shipment from an account's seeds; the attestation arrives as

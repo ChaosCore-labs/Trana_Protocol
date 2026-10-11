@@ -108,11 +108,36 @@ likes, up to the collateral each one reserves — and because the arrival it wri
 is trusted as signed, a false "delivered late" is indistinguishable on chain from
 a true one.
 
-**Locked risk with no attestation.** A policy whose shipment is never attested
-keeps its payout in `total_locked_risk` forever, because `settle_policy` requires
-a signed attestation and there is no timeout path. The invariant still holds —
-the capital is genuinely still there — but it is unwithdrawable by LPs, since
-`free_capital` excludes it. This is the hole the timeout path (CHA-15) closes.
+**Locked risk is temporary, not permanent.** A misreading worth correcting
+explicitly: it is tempting to say a policy whose shipment is never attested locks
+its payout forever. It does not. `buy_policy` requires
+`expected_delivery > now`, and `settle_policy` requires
+`now >= expected_delivery + grace_period`; the clock is monotonic, so every
+policy is necessarily settleable once its deadline passes. The only remaining
+requirement is *some* signed arrival for its shipment — early or late. Past the
+deadline, any attestation releases the risk.
+
+What a never-attested shipment therefore costs the pool is not a permanent lock
+but **an open position with no expiry**: the payout stays in `total_locked_risk`,
+and therefore outside `free_capital`, for as long as nobody settles. The
+invariant still holds — the capital is genuinely there — but LPs cannot withdraw
+it in the meantime.
+
+This makes settlement liveness an operational concern, not a program gap. There
+is no timeout path and the project has decided against one: the trigger is
+terminal arrival, and a timeout would pay precisely in the total-loss case where
+cargo insurance already indemnifies the same exporter — manufacturing a double
+payout rather than covering a gap. See the Decision Log entry on the settlement
+trigger.
+
+**Grace period versus transit time.** A related trap that is not enforced
+on chain: because a delay can only be as large as the transit itself, and ocean
+transit runs roughly 15–40 days depending on the corridor, a `grace_period` that
+approaches the route's transit time makes a policy that can practically never
+trigger. `buy_policy` accepts any non-negative grace period and any future
+`expected_delivery`, so this is a product-parameter question rather than a
+program invariant — but a grace period chosen without reference to the route
+sells a policy that is very unlikely to pay.
 
 **Fee value.** Fees accrue to `total_fees` and are excluded from LP claims and
 from `free_capital`. They are also unwithdrawable by any instruction, so the
