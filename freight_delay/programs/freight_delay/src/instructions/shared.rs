@@ -9,10 +9,8 @@ const ED25519_PROGRAM_ID: Pubkey = pubkey!("Ed25519SigVerify11111111111111111111
 
 /// The signed delivery attestation produced off-chain by the attester.
 ///
-/// Field order and width are the contract with `attester/src/payload.ts`:
-/// 32 bytes, little-endian — `shipment_id u64`, `actual_delivery i64`,
-/// `terminal_code u64`, `nonce u64`. Changing either side is a breaking change
-/// to both.
+/// Field order and width are the contract with `attester/src/payload.ts`. Any
+/// change here is breaking on both sides.
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct DeliveryAttestation {
     pub shipment_id: u64,
@@ -34,19 +32,11 @@ impl DeliveryAttestation {
 }
 
 /// Verify an ed25519 signature over `message` by `attester_pubkey`, requiring
-/// that the signature also appear as an ed25519 precompile instruction earlier
-/// in this same transaction.
+/// the signature to also appear as an ed25519 precompile instruction earlier in
+/// this same transaction.
 ///
-/// This is a *scan*, not a cryptographic call: it confirms the precompile ran
-/// over exactly these bytes in this transaction, and that the bytes it checked
-/// are the ones the caller handed us rather than some other instruction's.
-///
-/// It does **not** prevent replay. The precompile is deterministic, so the same
-/// signature bytes can be resubmitted in a later transaction and will pass this
-/// check again. What stops a replay is the caller-supplied `nonce`: it is part
-/// of the signed message and `settle_policy` requires it to equal
-/// `policy.policy_id`, so a signature can only ever settle the policy it was
-/// minted for, and `is_settled` blocks settling that policy twice.
+/// Not a replay guard: the precompile is deterministic, so the same bytes pass
+/// this scan again in a later transaction. The `nonce` stops replay.
 pub fn verify_ed25519_attestation(
     instructions_sysvar: &AccountInfo,
     attester_pubkey: &[u8; 32],
@@ -76,18 +66,15 @@ pub fn verify_ed25519_attestation(
 }
 
 /// Does this ed25519 precompile instruction carry exactly our key, message and
-/// signature, inline in this instruction (not by reference to another one)?
+/// signature, inline rather than by reference?
 ///
-/// Precompile data layout (16-byte header, then the entries):
-///   [0]     num_signatures (u8)
-///   [1]     padding
-///   [2..4]  signature_offset            (u16 LE, into this same data)
-///   [4..6]  signature_instruction_index (0xFFFF = this instruction)
-///   [6..8]  public_key_offset           (u16 LE)
-///   [8..10] public_key_instruction_index (0xFFFF)
-///   [10..12] message_data_offset        (u16 LE)
-///   [12..14] message_data_size          (u16 LE)
-///   [14..16] message_instruction_index  (0xFFFF)
+/// Header offsets, all u16 LE into this instruction's own data:
+///   [2] signature_offset  [4] signature_instruction_index
+///   [6] public_key_offset [8] public_key_instruction_index
+///   [10] message_offset   [12] message_size
+///   [14] message_instruction_index
+///
+/// An instruction index of 0xFFFF means "inline in this instruction".
 fn ed25519_ix_matches(
     data: &[u8],
     pubkey: &[u8; 32],
@@ -154,12 +141,8 @@ mod tests {
 
     /// A precompile payload with the given `message_instruction_index`.
     ///
-    /// `ed25519_ix_matches` is the only place the program parses untrusted
-    /// precompile bytes, and it is reached in production only through a
-    /// precompile instruction the runtime has already accepted. That makes its
-    /// header checks hard to exercise from an integration test: the runtime
-    /// rejects a malformed index before our code sees it. So the parser is
-    /// tested directly.
+    /// These tests build malformed headers on purpose, so the real encoder
+    /// cannot be used here.
     fn precompile_data(msg_ix: u16) -> Vec<u8> {
         let pubkey = [1u8; 32];
         let signature = [2u8; 64];
@@ -193,9 +176,8 @@ mod tests {
 
     #[test]
     fn rejects_a_header_whose_high_byte_is_not_0xff() {
-        // message_instruction_index is a u16 at bytes 14..16. Only 0xFFFF means
-        // "inline". 0x00FF is not inline, but comparing the low byte alone
-        // accepts it, because its low byte is 0xFF.
+        // Only 0xFFFF means "inline". 0x00FF has a low byte of 0xFF, so a
+        // low-byte-only comparison accepts it.
         let data = precompile_data(0x00FF);
         assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
     }

@@ -33,11 +33,8 @@ pub struct PolicyPurchased {
 }
 
 /// Emitted by `settle_policy` for every settlement: the attested fact that
-/// resolved the policy, so an off-chain reader can reconstruct deliveries
-/// without trusting the attester's own logs.
-///
-/// There is no `reporter` field by design — the evidence is the ed25519
-/// signature `settle_policy` verified, not the identity of a wallet.
+/// resolved the policy. No `reporter` field — the evidence is the signature,
+/// not a wallet identity.
 #[event]
 pub struct DeliveryAttested {
     pub config: Pubkey,

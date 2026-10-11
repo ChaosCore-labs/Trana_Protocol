@@ -253,12 +253,8 @@ fn buy_policy(
 }
 
 /// Sign an arrival with `signer` and build the instruction pair to settle with:
-/// the ed25519 precompile, then `settle_policy`.
-///
-/// The precompile must be the instruction immediately before `settle_policy`,
-/// because the program only scans instructions that precede it. Passing a
-/// `signer` other than the pool oracle is how the rejection tests build a
-/// well-formed attestation that must still be refused.
+/// the ed25519 precompile, then `settle_policy`. A `signer` other than the pool
+/// oracle is how the rejection tests build a valid-looking attestation.
 fn signed_attestation(
     env: &Env,
     signer: &Keypair,
@@ -728,13 +724,10 @@ const ATTESTER_SIG_HEX: &str = concat!(
 
 #[test]
 fn settle_accepts_an_attestation_signed_by_the_typescript_attester() {
-    // The cross-language contract. Both suites could pass while disagreeing
-    // about the wire format, because each checks its own encoder against its
-    // own decoder. This test is the only place the two meet: the bytes and the
-    // signature are produced by `attester/src/payload.ts` and
-    // `attester/src/signing.ts`, and must be accepted by the Rust path.
-    //
-    // If the TS layout ever drifts, this signature stops verifying.
+    // The cross-language contract: these bytes come from `attester/` (TypeScript),
+    // so a layout drift on either side stops the signature verifying. Both
+    // suites checking their own encoder against their own decoder cannot catch
+    // that.
     let mut env = funded_pool(1_000_000 * UNIT);
     assert!(
         buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
@@ -812,14 +805,9 @@ fn settle_accepts_an_attestation_signed_by_the_typescript_attester() {
 
 #[test]
 fn settle_releases_locked_risk_without_any_timeout_path() {
-    // The "locked risk forever" question, pinned down. `buy_policy` requires
-    // expected_delivery > now and `settle_policy` requires now >= deadline, and
-    // the clock only moves forward, so every policy becomes settleable once its
-    // deadline passes. There is no timeout instruction — the settlement path is
-    // just the ordinary one, taken late.
-    //
-    // This test asserts that taken-late path works, and that it releases the
-    // risk rather than paying: the arrival is inside the grace period.
+    // Every policy is settleable once its deadline passes: the clock only moves
+    // forward, so the maturity gate is satisfied for good. A late crank with an
+    // on-time arrival releases the risk without paying.
     let mut env = funded_pool(1_000_000 * UNIT);
     assert!(
         buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
