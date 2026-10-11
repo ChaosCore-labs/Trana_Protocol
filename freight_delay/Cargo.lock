@@ -1431,6 +1431,7 @@ dependencies = [
  "solana-awesome",
  "solana-ed25519-program",
  "solana-instructions-sysvar 3.0.1",
+ "solana-sdk-ids",
 ]
 
 [[package]]

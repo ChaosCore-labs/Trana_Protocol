@@ -1,11 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Transfer, transfer};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
+use solana_sdk_ids::ed25519_program;
 
 use crate::{constants::CONFIG_SEED, error::FreightDelayError, state::PoolConfig};
-
-/// The native ed25519 signature-verification program.
-const ED25519_PROGRAM_ID: Pubkey = pubkey!("Ed25519SigVerify111111111111111111111111111");
 
 /// The signed delivery attestation produced off-chain by the attester.
 ///
@@ -52,7 +50,7 @@ pub fn verify_ed25519_attestation(
             Ok(ix) => ix,
             Err(_) => continue,
         };
-        if ix.program_id != ED25519_PROGRAM_ID {
+        if ix.program_id != ed25519_program::ID {
             continue;
         }
         if ed25519_ix_matches(&ix.data, attester_pubkey, message, signature) {
