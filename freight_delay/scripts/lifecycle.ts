@@ -15,6 +15,7 @@
 import { createClient, address, flattenInstructionPlan, generateKeyPairSigner, getBase58Decoder } from "@solana/kit";
 import { surfpool } from "@solana/surfpool/kit";
 import { getCreateAccountInstruction } from "@solana-program/system";
+import { SYSVAR_CLOCK_ADDRESS } from "@solana/sysvars";
 import { TOKEN_PROGRAM_ADDRESS, getInitializeMintInstruction, getMintToATAInstructionPlanAsync } from "@solana-program/token";
 
 import { privateKeyFromSeed, publicKeyFromPrivate } from "../../attester/src/signing.ts";
@@ -74,7 +75,7 @@ const programId = address(client.surfnet.deployProgram(PROGRAM_NAME));
 /** The validator's own clock — not the host's. Surfnet starts at a fixed slot. */
 const chainNow = async (): Promise<bigint> => {
   const res: any = await client.rpc
-    .getAccountInfo(address("SysvarC1ock11111111111111111111111111111111"), { encoding: "jsonParsed" })
+    .getAccountInfo(SYSVAR_CLOCK_ADDRESS, { encoding: "jsonParsed" })
     .send();
   return BigInt(res.value.data.parsed.info.unixTimestamp);
 };
