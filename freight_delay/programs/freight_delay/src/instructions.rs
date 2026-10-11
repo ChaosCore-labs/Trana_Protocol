@@ -4,6 +4,7 @@ pub mod initialize_pool;
 pub mod report_delivery_milestone;
 pub mod settle_policy;
 pub mod shared;
+pub mod verify_attestation;
 pub mod withdraw_capital;
 
 pub use buy_policy::*;
@@ -11,4 +12,5 @@ pub use deposit_capital::*;
 pub use initialize_pool::*;
 pub use report_delivery_milestone::*;
 pub use settle_policy::*;
+pub use verify_attestation::*;
 pub use withdraw_capital::*;

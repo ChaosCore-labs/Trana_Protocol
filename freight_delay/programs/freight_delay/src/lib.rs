@@ -69,6 +69,16 @@ pub mod freight_delay {
         ctx.accounts.settle_policy()
     }
 
+    /// SPIKE (CHA-16): prove ed25519 precompile + instruction-sysvar binding.
+    /// Not a product instruction; removed once `settle_policy` carries the check.
+    pub fn verify_attestation(
+        ctx: Context<VerifyAttestation>,
+        attestation: DeliveryAttestation,
+        signature: [u8; 64],
+    ) -> Result<()> {
+        ctx.accounts.verify_attestation(attestation, signature)
+    }
+
     pub fn withdraw_capital(ctx: Context<WithdrawCapital>, shares: u64) -> Result<()> {
         ctx.accounts.withdraw_capital(shares)
     }

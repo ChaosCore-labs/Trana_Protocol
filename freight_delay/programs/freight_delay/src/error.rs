@@ -24,4 +24,6 @@ pub enum FreightDelayError {
     InsufficientShares,
     #[msg("Arithmetic overflow.")]
     MathOverflow,
+    #[msg("Delivery attestation signature is missing or invalid.")]
+    AttestationRejected,
 }
