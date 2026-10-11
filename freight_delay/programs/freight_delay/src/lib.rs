@@ -51,32 +51,12 @@ pub mod freight_delay {
         )
     }
 
-    pub fn report_delivery_milestone(
-        ctx: Context<ReportDeliveryMilestone>,
-        shipment_id: u64,
-        actual_delivery: i64,
-        terminal_code: u64,
-    ) -> Result<()> {
-        ctx.accounts.report_delivery_milestone(
-            shipment_id,
-            actual_delivery,
-            terminal_code,
-            ctx.bumps,
-        )
-    }
-
-    pub fn settle_policy(ctx: Context<SettlePolicy>) -> Result<()> {
-        ctx.accounts.settle_policy()
-    }
-
-    /// SPIKE (CHA-16): prove ed25519 precompile + instruction-sysvar binding.
-    /// Not a product instruction; removed once `settle_policy` carries the check.
-    pub fn verify_attestation(
-        ctx: Context<VerifyAttestation>,
-        attestation: DeliveryAttestation,
+    pub fn settle_policy(
+        ctx: Context<SettlePolicy>,
+        attestation: instructions::shared::DeliveryAttestation,
         signature: [u8; 64],
     ) -> Result<()> {
-        ctx.accounts.verify_attestation(attestation, signature)
+        ctx.accounts.settle_policy(attestation, signature)
     }
 
     pub fn withdraw_capital(ctx: Context<WithdrawCapital>, shares: u64) -> Result<()> {

@@ -1,11 +1,11 @@
 #![allow(clippy::result_large_err)]
 
 use anchor_lang::{
-    AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData, ToAccountMetas,
+    AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData, ToAccountMetas, pubkey,
     solana_program::{instruction::Instruction, system_program},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use freight_delay::{accounts, events, instruction};
+use freight_delay::{accounts, events, instruction, instructions::shared::DeliveryAttestation};
 use litesvm::{LiteSVM, types::TransactionResult};
 use litesvm_token::{
     CreateAssociatedTokenAccount, CreateMint, MintToChecked, TOKEN_ID, get_spl_account, spl_token,
@@ -63,14 +63,6 @@ fn lp_position_pda(config: &Pubkey, lp: &Pubkey) -> Pubkey {
 fn policy_pda(config: &Pubkey, policy_id: u64) -> Pubkey {
     Pubkey::find_program_address(
         &[b"policy", config.as_ref(), &policy_id.to_le_bytes()],
-        &freight_delay::id(),
-    )
-    .0
-}
-
-fn delivery_pda(shipment_id: u64) -> Pubkey {
-    Pubkey::find_program_address(
-        &[b"delivery", &shipment_id.to_le_bytes()],
         &freight_delay::id(),
     )
     .0
@@ -137,7 +129,7 @@ fn setup() -> Env {
     let lp = Keypair::new();
     let shipper = Keypair::new();
 
-    let mut svm = LiteSVM::new();
+    let mut svm = LiteSVM::new().with_precompiles();
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../target/deploy/freight_delay.so"
@@ -259,45 +251,78 @@ fn buy_policy(
     send(&mut env.svm, &env.shipper, &[ix])
 }
 
-fn report_delivery(env: &mut Env, actual_delivery: i64) -> TransactionResult {
-    let ix = Instruction::new_with_bytes(
+/// Sign an arrival with `signer` and build the instruction pair to settle with:
+/// the ed25519 precompile, then `settle_policy`.
+///
+/// The precompile must be the instruction immediately before `settle_policy`,
+/// because the program only scans instructions that precede it. Passing a
+/// `signer` other than the pool oracle is how the rejection tests build a
+/// well-formed attestation that must still be refused.
+fn signed_attestation(
+    env: &Env,
+    signer: &Keypair,
+    actual_delivery: i64,
+    nonce: u64,
+) -> (Instruction, Instruction) {
+    let att = DeliveryAttestation {
+        shipment_id: SHIPMENT_ID,
+        actual_delivery,
+        terminal_code: TERMINAL_CODE,
+        nonce,
+    };
+    // Built from the program's own encoder, so the test cannot drift from the
+    // wire format the contract verifies.
+    let message = att.to_message();
+    let signature: [u8; 64] = signer.sign_message(&message).as_ref().try_into().unwrap();
+
+    let mut data = Vec::with_capacity(16 + 32 + 64 + 32);
+    data.push(1);
+    data.push(0);
+    data.extend_from_slice(&48u16.to_le_bytes()); // signature_offset
+    data.extend_from_slice(&0xFFFFu16.to_le_bytes());
+    data.extend_from_slice(&16u16.to_le_bytes()); // public_key_offset
+    data.extend_from_slice(&0xFFFFu16.to_le_bytes());
+    data.extend_from_slice(&112u16.to_le_bytes()); // message_data_offset
+    data.extend_from_slice(&32u16.to_le_bytes());
+    data.extend_from_slice(&0xFFFFu16.to_le_bytes());
+    data.extend_from_slice(&signer.pubkey().to_bytes());
+    data.extend_from_slice(&signature);
+    data.extend_from_slice(&message);
+
+    let precompile = Instruction {
+        program_id: pubkey!("Ed25519SigVerify111111111111111111111111111"),
+        accounts: vec![],
+        data,
+    };
+
+    let settle = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::ReportDeliveryMilestone {
-            shipment_id: SHIPMENT_ID,
-            actual_delivery,
-            terminal_code: TERMINAL_CODE,
+        &instruction::SettlePolicy {
+            attestation: att,
+            signature,
         }
         .data(),
-        accounts::ReportDeliveryMilestone {
-            reporter: env.oracle.pubkey(),
-            config: env.config,
-            delivery_report: delivery_pda(SHIPMENT_ID),
-            system_program: system_program::ID,
-        }
-        .to_account_metas(None),
-    );
-    send(&mut env.svm, &env.oracle, &[ix])
-}
-
-fn settle_policy(env: &mut Env, policy_id: u64) -> TransactionResult {
-    let crank = Keypair::new();
-    env.svm.airdrop(&crank.pubkey(), 100_000_000_000).unwrap();
-    let ix = Instruction::new_with_bytes(
-        freight_delay::id(),
-        &instruction::SettlePolicy {}.data(),
         accounts::SettlePolicy {
-            crank: crank.pubkey(),
+            crank: env.admin.pubkey(),
             config: env.config,
             usdc_mint: env.usdc_mint,
             treasury: env.treasury,
-            policy: policy_pda(&env.config, policy_id),
-            delivery_report: delivery_pda(SHIPMENT_ID),
+            policy: policy_pda(&env.config, 1),
             insured_usdc: env.shipper_usdc,
+            instructions: solana_instructions_sysvar::ID,
             token_program: TOKEN_ID,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &crank, &[ix])
+
+    (precompile, settle)
+}
+
+/// Settle policy `policy_id` against an arrival. The nonce is the policy id, so
+/// the signature is bound to that one policy.
+fn settle_policy(env: &mut Env, policy_id: u64, actual_delivery: i64) -> TransactionResult {
+    let (precompile, settle) = signed_attestation(env, &env.oracle, actual_delivery, policy_id);
+    send(&mut env.svm, &env.admin, &[precompile, settle])
 }
 
 fn withdraw_capital(env: &mut Env, shares: u64) -> TransactionResult {
@@ -444,46 +469,26 @@ fn buy_policy_rejects_payout_above_free_capital() {
 }
 
 #[test]
-fn report_delivery_requires_oracle_authority() {
-    let mut env = funded_pool(100_000 * UNIT);
-    let ix = Instruction::new_with_bytes(
-        freight_delay::id(),
-        &instruction::ReportDeliveryMilestone {
-            shipment_id: SHIPMENT_ID,
-            actual_delivery: deadline(),
-            terminal_code: TERMINAL_CODE,
-        }
-        .data(),
-        accounts::ReportDeliveryMilestone {
-            reporter: env.admin.pubkey(),
-            config: env.config,
-            delivery_report: delivery_pda(SHIPMENT_ID),
-            system_program: system_program::ID,
-        }
-        .to_account_metas(None),
+fn settle_emits_the_attested_delivery() {
+    // The on-chain record of what the oracle attested. Replaces the old
+    // DeliveryReport account: same fact, no rent, no write-once slot.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
     );
-    assert!(send(&mut env.svm, &env.admin, &[ix]).is_err());
-    assert!(env.svm.get_account(&delivery_pda(SHIPMENT_ID)).is_none());
-}
+    set_ts(&mut env.svm, deadline() + 1);
 
-#[test]
-fn report_delivery_writes_attested_milestone() {
-    let mut env = funded_pool(100_000 * UNIT);
-    let res = report_delivery(&mut env, deadline());
+    let late = deadline() + 100;
+    let res = settle_policy(&mut env, 1, late);
     assert!(res.is_ok());
 
-    let raw = env.svm.get_account(&delivery_pda(SHIPMENT_ID)).unwrap();
-    let mut data: &[u8] = &raw.data;
-    let report = freight_delay::state::DeliveryReport::try_deserialize(&mut data).unwrap();
-    assert_eq!(report.shipment_id, SHIPMENT_ID);
-    assert_eq!(report.actual_delivery, deadline());
-    assert_eq!(report.terminal_code, TERMINAL_CODE);
-    assert_eq!(report.reporter, env.oracle.pubkey());
-
-    let event: events::DeliveryReported = parse_event(&res);
+    let event: events::DeliveryAttested = parse_event(&res);
+    assert_eq!(event.config, env.config);
+    assert_eq!(event.policy, policy_pda(&env.config, 1));
     assert_eq!(event.shipment_id, SHIPMENT_ID);
-    assert_eq!(event.actual_delivery, deadline());
-    assert_eq!(event.timestamp, BASE_TS);
+    assert_eq!(event.actual_delivery, late);
+    assert_eq!(event.terminal_code, TERMINAL_CODE);
+    assert_eq!(event.nonce, 1);
 }
 
 #[test]
@@ -495,12 +500,11 @@ fn settle_pays_shipper_on_late_delivery() {
     assert!(buy_policy(&mut env, 1, payout, premium, BASE_TS + SLA_DELTA).is_ok());
     // Delivered 100s past the SLA plus grace => the policy pays out.
     let late = deadline() + 100;
-    assert!(report_delivery(&mut env, late).is_ok());
 
     let shipper_before = balance(&env.svm, &env.shipper_usdc);
     set_ts(&mut env.svm, deadline() + 1);
 
-    let res = settle_policy(&mut env, 1);
+    let res = settle_policy(&mut env, 1, late);
     assert!(res.is_ok());
 
     let fee = premium * FEE_BPS as u64 / 10_000;
@@ -535,12 +539,12 @@ fn settle_releases_risk_when_within_grace() {
     let premium = 50_000 * UNIT;
     assert!(buy_policy(&mut env, 1, payout, premium, BASE_TS + SLA_DELTA).is_ok());
     // Arrived exactly at the deadline => still on time, risk released with no payout.
-    assert!(report_delivery(&mut env, deadline()).is_ok());
+    let on_time = deadline();
 
     let shipper_before = balance(&env.svm, &env.shipper_usdc);
     set_ts(&mut env.svm, deadline() + 1);
 
-    let res = settle_policy(&mut env, 1);
+    let res = settle_policy(&mut env, 1, on_time);
     assert!(res.is_ok());
 
     let fee = premium * FEE_BPS as u64 / 10_000;
@@ -570,10 +574,9 @@ fn settle_rejects_before_maturity() {
         )
         .is_ok()
     );
-    assert!(report_delivery(&mut env, deadline() + 100).is_ok());
 
     set_ts(&mut env.svm, deadline() - 1);
-    assert!(settle_policy(&mut env, 1).is_err());
+    assert!(settle_policy(&mut env, 1, deadline() + 100).is_err());
 }
 
 #[test]
@@ -589,11 +592,10 @@ fn settle_rejects_double_settlement() {
         )
         .is_ok()
     );
-    assert!(report_delivery(&mut env, deadline()).is_ok());
     set_ts(&mut env.svm, deadline() + 1);
 
-    assert!(settle_policy(&mut env, 1).is_ok());
-    assert!(settle_policy(&mut env, 1).is_err());
+    assert!(settle_policy(&mut env, 1, deadline()).is_ok());
+    assert!(settle_policy(&mut env, 1, deadline()).is_err());
 }
 
 #[test]
@@ -677,4 +679,39 @@ fn withdraw_rejects_unknown_position() {
         .to_account_metas(None),
     );
     assert!(send(&mut env.svm, &stranger, &[ix]).is_err());
+}
+
+#[test]
+fn settle_rejects_an_attestation_signed_by_a_stranger() {
+    // The only thing that makes an attestation authoritative is the key that
+    // signed it. A well-formed, correctly-nonced attestation from any other key
+    // must not move pool money.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
+    );
+    set_ts(&mut env.svm, deadline() + 1);
+
+    // Correctly shaped and nonced, signed by a key that is not the oracle.
+    let impostor = Keypair::new();
+    let (precompile, settle) = signed_attestation(&env, &impostor, deadline() + 100, 1);
+
+    assert!(send(&mut env.svm, &env.admin, &[precompile, settle]).is_err());
+    assert!(!read_policy(&env.svm, &policy_pda(&env.config, 1)).is_settled);
+}
+
+#[test]
+fn settle_rejects_an_attestation_with_the_wrong_nonce() {
+    // A signature is bound to one policy by its nonce. Reusing policy 1's
+    // signature shape under a different nonce must not settle policy 1.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
+    );
+    set_ts(&mut env.svm, deadline() + 1);
+
+    // Correct key, correct payload, but nonce 999 instead of the policy id 1.
+    let (precompile, settle) = signed_attestation(&env, &env.oracle, deadline() + 100, 999);
+    assert!(send(&mut env.svm, &env.admin, &[precompile, settle]).is_err());
+    assert!(!read_policy(&env.svm, &policy_pda(&env.config, 1)).is_settled);
 }

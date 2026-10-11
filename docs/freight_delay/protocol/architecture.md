@@ -11,14 +11,13 @@ flowchart LR
     Admin["Admin"]
     LP["Liquidity Provider"]
     Shipper["Shipper / Exporter"]
-    Oracle["Oracle Authority"]
+    Attester["Attester<br/>ed25519 keypair"]
     Crank["Crank<br/>any signer"]
 
     subgraph Program["Program-owned state"]
         Config["PoolConfig"]
         LpPos["LpPosition"]
         Policy["Policy"]
-        Report["DeliveryReport"]
     end
 
     subgraph Token["SPL token accounts"]
@@ -36,10 +35,9 @@ flowchart LR
     LP -->|withdraw_capital| LpPos
     Shipper -->|buy_policy| Config
     Shipper -->|buy_policy| Policy
-    Oracle -->|report_delivery_milestone| Report
+    Attester -.->|signs attestation| Crank
     Crank -->|settle_policy| Config
     Crank -->|settle_policy| Policy
-    Crank -.->|reads| Report
 
     Config -.->|authority| Treasury
     Mint -.->|namespaces| Config
@@ -53,10 +51,16 @@ flowchart LR
     Treasury -.->|redemption| LpAta
 ```
 
-Solid edges are what each instruction creates or writes. Five of the six write
+Solid edges are what each instruction creates or writes. Four of the five write
 `PoolConfig`, which is why it is the accounting hub rather than one account among
-four. `report_delivery_milestone` is the exception: it reads `config` only, to
-check the reporter against `oracle_authority`, and moves no tokens.
+three. `initialize_pool` is the exception: it creates `PoolConfig` rather than
+writing an existing one, and starts the pool at zero risk.
+
+The attester is drawn as a dotted edge because it is **off chain**. It holds an
+ed25519 keypair and signs `(shipment_id, actual_delivery, terminal_code, nonce)`;
+the crank relays that signature into `settle_policy`, which verifies it against
+`PoolConfig.oracle_authority`. No account is written for an arrival — the
+attestation exists only inside the settling transaction.
 
 Dotted arrows are the token movements and the two structural links the program
 rests on: the treasury's authority is the `PoolConfig` PDA, and `PoolConfig`
@@ -73,9 +77,8 @@ counterparties of those four legs.
 | treasury | `[b"treasury", config]` | SPL Token program | `PoolConfig` PDA |
 | `LpPosition` | `[b"lp_position", config, lp]` | Freight Delay program | — |
 | `Policy` | `[b"policy", config, policy_id_le]` | Freight Delay program | — |
-| `DeliveryReport` | `[b"delivery", shipment_id_le]` | Freight Delay program | — |
 
-Three consequences follow from these shapes, and each is load-bearing:
+Two consequences follow from these shapes, and each is load-bearing:
 
 **The pool is namespaced by mint.** `PoolConfig` derives from the USDC mint, so
 one mint gets one pool, and nothing in the program has to check for a duplicate
@@ -90,11 +93,10 @@ The program holds no private key; it can only move those funds by producing the
 pool even if a handler forgot a signer check — the token program itself rejects
 the transfer.
 
-**`DeliveryReport` is deliberately not namespaced by pool.** A report is keyed by
-`shipment_id` alone, so a shipment's arrival is a single global fact shared by
-every pool that reads it. That is a design choice with a real consequence:
-reports cannot be created twice, and one authority's observation serves all
-pools. See [LOI vs Code](/freight_delay/appendix/loi-divergences).
+**There is no delivery account at all.** An attested arrival is not state: it is
+a signed message verified during settlement. Nothing is written for an arrival,
+so there is no account to namespace, no write-once slot, and no stale report to
+reason about. The delivery record lives in the `DeliveryAttested` event.
 
 ## The single outbound CPI
 
@@ -138,19 +140,18 @@ is caller-supplied arbitrary.
 ```text
 programs/freight_delay/src/
 ├── lib.rs                           # declare_id!, #[program] mod freight_delay — forwarding only
-├── constants.rs                     # 5 seed literals + FEE_DENOMINATOR
-├── error.rs                         # FreightDelayError — 11 flat variants
-├── events.rs                        # one event per instruction
+├── constants.rs                     # 4 seed literals + FEE_DENOMINATOR
+├── error.rs                         # FreightDelayError — 12 flat variants
+├── events.rs                        # six events
 ├── instructions.rs                  # pub mod + pub use registry
-├── state.rs                         # PoolConfig, LpPosition, Policy, DeliveryReport
+├── state.rs                         # PoolConfig, LpPosition, Policy
 └── instructions/
     ├── initialize_pool.rs
     ├── deposit_capital.rs
     ├── buy_policy.rs
-    ├── report_delivery_milestone.rs
     ├── settle_policy.rs
     ├── withdraw_capital.rs
-    └── shared.rs                    # transfer_from_treasury
+    └── shared.rs                    # attestation verification + transfer_from_treasury
 ```
 
 `lib.rs` contains no logic. Each `#[program]` function forwards its arguments

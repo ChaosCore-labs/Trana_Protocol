@@ -25,14 +25,14 @@ freight_delay/
 ├── programs/freight_delay/
 │   ├── Cargo.toml            # anchor-lang + anchor-spl 1.2.0, LiteSVM dev-deps
 │   ├── src/
-│   │   ├── lib.rs            # #[program] — six instructions, forwarding ctx.bumps
+│   │   ├── lib.rs            # #[program] — five instructions, forwarding ctx.bumps
 │   │   ├── instructions.rs   # flat `pub mod` + `pub use` list
 │   │   ├── instructions/     # one file per instruction: Accounts struct + handler
-│   │   ├── state.rs          # PoolConfig, LpPosition, Policy, DeliveryReport
-│   │   ├── constants.rs      # the five PDA seeds and FEE_DENOMINATOR
-│   │   ├── error.rs          # Freight DelayError — 11 flat variants
-│   │   └── events.rs         # six events, one per instruction
-│   └── tests/test_freight_delay.rs  # 15 LiteSVM tests
+│   │   ├── state.rs          # PoolConfig, LpPosition, Policy
+│   │   ├── constants.rs      # the four PDA seeds and FEE_DENOMINATOR
+│   │   ├── error.rs          # Freight DelayError — 12 flat variants
+│   │   └── events.rs         # six events (settle_policy emits two)
+│   └── tests/test_freight_delay.rs  # 16 LiteSVM tests
 └── runbooks/                 # Surfpool deployment scaffolding (has its own README)
 ```
 
@@ -79,8 +79,8 @@ is.
 | Admin | `initialize_pool` once: sets `fee_bps` and the oracle authority, and creates the pool's treasury token account. |
 | LP | `deposit_capital` mints shares against the pool. `withdraw_capital` burns them for a share of the capital that is not locked against outstanding payouts. |
 | Shipper | `buy_policy` pays a premium, credited to the pool net of fee, and locks the policy's payout against the pool's capital. |
-| Oracle authority | `report_delivery_milestone` attests one arrival per `shipment_id`. |
-| Crank — anyone | `settle_policy` after the deadline pays the shipper if the attested arrival is past the deadline. |
+| Attester (off chain) | Signs an arrival — `(shipment_id, actual_delivery, terminal_code, nonce)` — with its ed25519 key. Writes nothing on chain. |
+| Crank — anyone | `settle_policy` relays that signature after the deadline, pays the shipper if the attested arrival is past it. |
 
 ### PDAs
 
@@ -90,7 +90,8 @@ is.
 | treasury | `[b"treasury", config]` | An SPL token account owned by the token program, with `PoolConfig` as its authority — the only account the program signs for. |
 | `LpPosition` | `[b"lp_position", config, lp]` | Share balance per LP. |
 | `Policy` | `[b"policy", config, policy_id_le]` | One per purchase. |
-| `DeliveryReport` | `[b"delivery", shipment_id_le]` | **Not** namespaced by pool: a shipment's arrival is global, and a report is written once. |
+
+There is no delivery seed: an attested arrival is a signed message, not an account.
 
 ### Instructions
 
@@ -99,8 +100,7 @@ is.
 | `initialize_pool` | admin | Creates `PoolConfig` and the treasury | `fee_bps <= 10_000` |
 | `deposit_capital` | LP | USDC → treasury, mints shares | `amount != 0`, `shares != 0` |
 | `buy_policy` | shipper | Premium → treasury, locks payout risk | `payout != 0`, `premium != 0`, `expected_delivery > now`, `grace_period >= 0`, `free_capital >= payout` |
-| `report_delivery_milestone` | oracle authority only | Creates the `DeliveryReport` | `reporter == config.oracle_authority` |
-| `settle_policy` | any signer | Pays the shipper iff delayed, always releases the locked risk | not already settled, `now >= expected_delivery + grace_period`, report matches the policy's shipment |
+| `settle_policy` | any signer | Pays the shipper iff delayed, always releases the locked risk | not already settled, `now >= expected_delivery + grace_period`, attestation shipment matches the policy's, `nonce == policy.policy_id`, ed25519 signature verified against `oracle_authority` |
 | `withdraw_capital` | LP | Treasury → LP, burns shares | `shares != 0`, `shares <= position.shares`, `amount != 0`, `amount <= free_capital` |
 
 The full guard list, with the account-level constraints that act as guards too
@@ -153,11 +153,12 @@ fund its own payout. And every state-mutating handler ends with
 
 These are design decisions, not bugs:
 
-- `report_delivery_milestone` uses `init` and nothing updates or deletes a report,
-  so a shipment can be attested **exactly once**. A wrong arrival is permanent.
-- Settlement requires the report to exist. A policy whose shipment was never
-  attested keeps its payout locked in `total_locked_risk` forever — there is no
-  timeout and no refund path.
+- Settlement requires a valid signed attestation. A policy whose shipment was
+  never attested keeps its payout locked in `total_locked_risk` forever — there is
+  no timeout and no refund path.
+- The attester is a single key. Its signature is cryptographically verified, but
+  there is no decentralisation: a compromised `oracle_authority` settles falsely
+  and cannot be rotated.
 - There are no setters for `fee_bps` or `oracle_authority` after initialisation.
 
 [`../docs/freight_delay/appendix/loi-divergences.md`](../docs/freight_delay/appendix/loi-divergences.md)

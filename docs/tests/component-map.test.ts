@@ -31,10 +31,8 @@ interface Protocol {
   src: string
   /** Rust account type -> node id in the diagram. */
   nodes: Record<string, string>
-  /** The six instruction names. */
+  /** The five instruction names. */
   instructions: string[]
-  /** The one handler that reads config without writing it. */
-  readOnly: string
   /** Total program-owned state accounts written across every handler. */
   totalWrites: number
 }
@@ -48,18 +46,15 @@ const PROTOCOLS: Protocol[] = [
       PoolConfig: 'Config',
       LpPosition: 'LpPos',
       Policy: 'Policy',
-      DeliveryReport: 'Report',
     },
     instructions: [
       'buy_policy',
       'deposit_capital',
       'initialize_pool',
-      'report_delivery_milestone',
       'settle_policy',
       'withdraw_capital',
     ],
-    readOnly: 'report_delivery_milestone',
-    totalWrites: 10,
+    totalWrites: 9,
   },
 ]
 
@@ -201,14 +196,29 @@ describe.each(PROTOCOLS)('$name component map matches the account structs', (pro
     expect(unknown).toEqual([])
   })
 
-  it('keeps the report handler reading config rather than writing it', () => {
-    // The map's one read-only handler, and the edge that used to be wrong in
-    // the opposite direction: the report handler must not appear as a Config
-    // writer.
-    expect(writes.get(protocol.readOnly)).toEqual(new Set(['Report']))
-    expect(edges.some((edge) => edge.label === protocol.readOnly && edge.target === 'Config')).toBe(
-      false,
-    )
+  it('has no read-only handler left', () => {
+    // report_delivery_milestone used to read config without writing it. It was
+    // removed with the pull-model change, so every handler that takes PoolConfig
+    // must now write it. Only initialize_pool creates it without writing.
+    const takesConfig: string[] = []
+    for (const [instruction, structName] of instructionStructs) {
+      const source = readSrc(`instructions/${instruction}.rs`)
+      if (
+        parseAccounts(source, structName).some(
+          (account) => accountType(account.type) === 'PoolConfig',
+        )
+      ) {
+        takesConfig.push(instruction)
+      }
+    }
+    expect(takesConfig.length).toBeGreaterThan(0)
+    for (const instruction of takesConfig) {
+      const createsIt = instruction === 'initialize_pool'
+      expect(
+        writes.get(instruction)?.has('Config') || createsIt,
+        `${instruction} takes config but neither writes nor creates it`,
+      ).toBe(true)
+    }
   })
 
   it('gives the two capital handlers the same state accounts', () => {

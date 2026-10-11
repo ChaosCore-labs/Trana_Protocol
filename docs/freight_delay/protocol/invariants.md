@@ -33,7 +33,6 @@ doing the work:
 | `settle_policy` (triggered) | `-= payout` | `-= payout` | Equal subtraction from both sides preserves the ordering |
 | `settle_policy` (not triggered) | unchanged | `-= payout` | Risk falls, capital holds |
 | `withdraw_capital` | `-= amount` | unchanged | Guard: `amount <= free_capital`, i.e. `amount <= capital - locked`, so `capital - amount >= locked` |
-| `report_delivery_milestone` | unchanged | unchanged | No pool accounting is touched |
 
 Two details make this airtight rather than merely plausible.
 
@@ -109,11 +108,11 @@ likes, up to the collateral each one reserves — and because the arrival it wri
 is trusted as signed, a false "delivered late" is indistinguishable on chain from
 a true one.
 
-**Locked risk with no report.** A policy whose shipment is never attested keeps
-its payout in `total_locked_risk` forever, because `settle_policy` requires the
-`DeliveryReport` account to exist and there is no timeout path. The invariant
-still holds — the capital is genuinely still there — but it is unwithdrawable by
-LPs, since `free_capital` excludes it.
+**Locked risk with no attestation.** A policy whose shipment is never attested
+keeps its payout in `total_locked_risk` forever, because `settle_policy` requires
+a signed attestation and there is no timeout path. The invariant still holds —
+the capital is genuinely still there — but it is unwithdrawable by LPs, since
+`free_capital` excludes it. This is the hole the timeout path (CHA-15) closes.
 
 **Fee value.** Fees accrue to `total_fees` and are excluded from LP claims and
 from `free_capital`. They are also unwithdrawable by any instruction, so the

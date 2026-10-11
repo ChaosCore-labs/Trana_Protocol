@@ -1,8 +1,12 @@
 # Accounts & State
 
-Four account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
+Three account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
 one is allocated as `8 + X::INIT_SPACE`, where the leading 8 bytes are Anchor's
 discriminator.
+
+There is deliberately no account for delivery attestations. A settlement
+attestation arrives as instruction data and is verified by signature, not
+stored — see [Settlement](/freight_delay/workflows/lifecycle).
 
 ::: warning Layout is positional
 Field order is the account layout. Inserting or reordering a field silently
@@ -17,7 +21,7 @@ Seeds `[b"config", usdc_mint]`. One pool per USDC mint.
 | Field | Type | Bytes | Meaning |
 |---|---|---|---|
 | `admin` | `Pubkey` | 32 | Recorded at init; **never read by any handler** |
-| `oracle_authority` | `Pubkey` | 32 | Sole signer allowed to write `DeliveryReport` |
+| `oracle_authority` | `Pubkey` | 32 | The attester's raw 32-byte ed25519 public key; the only key whose signature settles a policy |
 | `usdc_mint` | `Pubkey` | 32 | The pool's mint; also a seed component |
 | `treasury` | `Pubkey` | 32 | The program-owned token account |
 | `total_capital` | `u64` | 8 | Deposits plus net premiums minus realised payouts |
@@ -49,10 +53,10 @@ pub fn assert_solvent(&self) -> Result<()> {
 `free_capital` uses `saturating_sub`, so it returns zero rather than underflowing
 if the invariant were ever violated — the guard fails closed.
 
-`assert_solvent()` is called at the end of all four state-mutating handlers
-(`deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital`), making
-full collateralisation a per-instruction re-check rather than a single entry
-gate.
+`assert_solvent()` is called at the end of every handler that moves capital or
+risk — `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital` —
+making full collateralisation a per-instruction re-check rather than a single
+entry gate. `initialize_pool` is the exception: it creates the pool at zero risk.
 
 ## `LpPosition` — a share balance
 
@@ -83,7 +87,7 @@ unclaimed ID.
 |---|---|---|---|
 | `insured` | `Pubkey` | 32 | Payout recipient; also the account constraint at settlement |
 | `policy_id` | `u64` | 8 | Caller-chosen identifier |
-| `shipment_id` | `u64` | 8 | Bill of lading matched against a `DeliveryReport` |
+| `shipment_id` | `u64` | 8 | Bill of lading matched against a settlement attestation |
 | `expected_delivery` | `i64` | 8 | The SLA arrival timestamp the shipment was quoted |
 | `grace_period` | `i64` | 8 | Slack after `expected_delivery` before a delay triggers |
 | `payout_amount` | `u64` | 8 | USDC paid on trigger |
@@ -100,33 +104,6 @@ without a transfer. `is_paid` is write-once-true and never reset.
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
 settlement time rather than stored. Neither term is validated for realism: any
 future `expected_delivery` and any non-negative `grace_period` is accepted.
-
-## `DeliveryReport` — an attested arrival
-
-Seeds `[b"delivery", shipment_id_le]` — **not namespaced by config**.
-
-| Field | Type | Bytes | Meaning |
-|---|---|---|---|
-| `shipment_id` | `u64` | 8 | Bill of lading the arrival belongs to |
-| `actual_delivery` | `i64` | 8 | The attested arrival timestamp |
-| `terminal_code` | `u64` | 8 | Gate-in terminal identifier; **never read by any handler** |
-| `timestamp` | `i64` | 8 | Attestation time; **never read by any handler** |
-| `reporter` | `Pubkey` | 32 | The authority that signed |
-| `bump` | `u8` | 1 | PDA bump |
-| | | **65** | `space = 8 + 65 = 73` |
-
-Two properties of this account drive much of the protocol's behaviour:
-
-**A report is global, not per-pool.** Because the seeds omit `config`, a
-`shipment_id` arrival is a single fact any pool can read. Reports are therefore
-shared infrastructure rather than pool-local state.
-
-**A report is write-once.** `report_delivery_milestone` uses `init`, so
-re-attesting the same shipment fails at the runtime level. Because the arrival is
-trusted exactly as signed and neither `timestamp` nor `terminal_code` is ever
-read back, an observation has no freshness or provenance guarantee on chain — a
-value attested months before a policy was purchased settles that policy just as
-validly as one attested yesterday.
 
 ## Where the USDC actually is
 

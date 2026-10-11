@@ -11,8 +11,8 @@ module, where the guards and arithmetic live.
 | `initialize_pool` | admin | `fee_bps <= 10_000` | `PoolInitialized` |
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
 | `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `free_capital >= payout` | `PolicyPurchased` |
-| `report_delivery_milestone` | oracle authority | `reporter == config.oracle_authority` | `DeliveryReported` |
-| `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; delivery fields match policy | `PolicySettled` |
+
+| `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled` |
 | `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital` | `CapitalWithdrawn` |
 
 Beyond these, the `#[derive(Accounts)]` structs carry constraints that are just
@@ -105,40 +105,30 @@ Nothing validates that the quoted `expected_delivery` is realistic, or that
 `grace_period` is a sane amount of slack. A policy written with a deadline in
 2030 simply locks its payout until 2030.
 
-## `report_delivery_milestone`
-
-Attests a shipment arrival. The only authority-gated instruction.
-
-```rust
-pub fn report_delivery_milestone(
-    ctx: Context<ReportDeliveryMilestone>,
-    shipment_id: u64,
-    actual_delivery: i64,
-    terminal_code: u64,
-) -> Result<()>
-```
-
-- **Guard:** `reporter.key() == config.oracle_authority`, else `Unauthorized`.
-- **Creates:** `DeliveryReport` at `[b"delivery", shipment_id_le]` with `init`,
-  recording `timestamp: Clock::unix_timestamp` and the reporter's key.
-- **Effect:** none on pool accounting. No tokens move.
-- **Note:** `init` makes each shipment write-once. There is no update or delete
-  path, so a mistaken or malicious attestation is permanent. Neither
-  `timestamp` nor `terminal_code` is read by any handler.
-- **Event:** `DeliveryReported { config, shipment_id, actual_delivery, terminal_code, timestamp, reporter }`
-
 ## `settle_policy`
 
 Pays the shipper on a late arrival, or releases the risk. Permissionless.
 
 ```rust
-pub fn settle_policy(ctx: Context<SettlePolicy>) -> Result<()>
+pub fn settle_policy(
+    ctx: Context<SettlePolicy>,
+    attestation: DeliveryAttestation,
+    signature: [u8; 64],
+) -> Result<()>
 ```
 
-- **Guards:** `!policy.is_settled`;
+The delivery fact arrives as **instruction data**, not as an account: a caller
+supplies the attested shipment and its ed25519 signature, and must also include
+the ed25519 precompile instruction that carries that signature, earlier in the
+same transaction.
+
+- **Guards, in order:** `!policy.is_settled`;
   `Clock::unix_timestamp >= policy.expected_delivery + policy.grace_period`;
-  `delivery_report.shipment_id == policy.shipment_id`.
-- **Trigger:** `actual_delivery > expected_delivery + grace_period`.
+  `attestation.shipment_id == policy.shipment_id`;
+  `attestation.nonce == policy.policy_id`; then the signature check — the
+  instruction sysvar must contain an ed25519 precompile entry over
+  `attestation.to_message()` for `config.oracle_authority`.
+- **Trigger:** `attestation.actual_delivery > expected_delivery + grace_period`.
 - **Effect, always:** `total_locked_risk -= payout_amount`, `policy.is_settled = true`.
 - **Effect, on trigger:** `total_capital -= payout_amount`,
   `policy.is_paid = true`, and `transfer_from_treasury(payout)` to the shipper's ATA.
@@ -147,9 +137,17 @@ pub fn settle_policy(ctx: Context<SettlePolicy>) -> Result<()>
 
 Notes that are easy to get wrong:
 
-The `delivery_report` account is derived from `policy.shipment_id`, so the
-field-equality guard is tautological in practice — the account's seeds already
-fix that field. It is defensive, not reachable.
+The `nonce` guard is the replay defence. The signed message includes a `nonce`
+field, and the handler requires it to equal `policy.policy_id`, so a signature
+minted for one policy cannot settle another. Without it, any attestation for the
+same shipment would settle every policy written against that shipment.
+
+The signature check is a *scan*, not a cryptographic call. It reads the
+instruction sysvar, walks the instructions before `settle_policy`, and accepts
+only an ed25519 precompile entry that carries exactly this message, this
+signature, and `config.oracle_authority` inline. So a valid signature that is
+never submitted to the precompile is not enough, and neither is one submitted in
+an earlier transaction — which is precisely the replay this design prevents.
 
 The risk is released on **both** branches. A non-triggered settle leaves
 `is_settled = true, is_paid = false` and returns the capital to free capacity.

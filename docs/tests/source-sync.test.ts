@@ -22,8 +22,6 @@ interface Protocol {
   src: string
   /** Account struct names, in `state.rs` declaration order. */
   accounts: string[]
-  /** The attested-observation handler: the one instruction name that differs. */
-  report: string
 }
 
 const PROTOCOLS: Protocol[] = [
@@ -31,8 +29,7 @@ const PROTOCOLS: Protocol[] = [
     name: 'freight_delay',
     docs: 'freight_delay',
     src: '../freight_delay/programs/freight_delay/src',
-    accounts: ['PoolConfig', 'LpPosition', 'Policy', 'DeliveryReport'],
-    report: 'report_delivery_milestone',
+    accounts: ['PoolConfig', 'LpPosition', 'Policy'],
   },
 ]
 
@@ -129,24 +126,23 @@ describe.each(PROTOCOLS)('$name', (protocol) => {
   )
 
   describe('source extraction', () => {
-    it('found the four account structs', () => {
+    it('found the three account structs', () => {
       expect(accountStructs.map((struct) => struct.name)).toEqual(protocol.accounts)
     })
 
-    it('found the six instruction handlers', () => {
+    it('found the five instruction handlers', () => {
       expect(instructionNames).toEqual([
         'initialize_pool',
         'deposit_capital',
         'buy_policy',
-        protocol.report,
         'settle_policy',
         'withdraw_capital',
       ])
     })
 
     it('found the error variants and seed literals', () => {
-      expect(errorVariants.length).toBe(11)
-      expect(seedLiterals).toHaveLength(5)
+      expect(errorVariants.length).toBe(12)
+      expect(seedLiterals).toHaveLength(4)
     })
   })
 

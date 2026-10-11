@@ -4,10 +4,13 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::{
     constants::*,
     error::FreightDelayError,
-    events::PolicySettled,
-    instructions::shared,
-    state::{DeliveryReport, Policy, PoolConfig},
+    events::{DeliveryAttested, PolicySettled},
+    instructions::shared::{self, DeliveryAttestation, verify_ed25519_attestation},
+    state::{Policy, PoolConfig},
 };
+
+/// Instruction sysvar address, used to bind an attestation to this transaction.
+const INSTRUCTIONS_ID: Pubkey = solana_instructions_sysvar::ID;
 
 #[derive(Accounts)]
 pub struct SettlePolicy<'info> {
@@ -35,21 +38,23 @@ pub struct SettlePolicy<'info> {
     )]
     pub policy: Account<'info, Policy>,
     #[account(
-        seeds = [DELIVERY_SEED, policy.shipment_id.to_le_bytes().as_ref()],
-        bump = delivery_report.bump,
-    )]
-    pub delivery_report: Account<'info, DeliveryReport>,
-    #[account(
         mut,
         associated_token::mint = usdc_mint,
         associated_token::authority = policy.insured,
     )]
     pub insured_usdc: Account<'info, TokenAccount>,
+    /// CHECK: the instructions sysvar; read to bind the attestation to THIS tx.
+    #[account(address = INSTRUCTIONS_ID)]
+    pub instructions: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
 }
 
 impl<'info> SettlePolicy<'info> {
-    pub fn settle_policy(&mut self) -> Result<()> {
+    pub fn settle_policy(
+        &mut self,
+        attestation: DeliveryAttestation,
+        signature: [u8; 64],
+    ) -> Result<()> {
         require!(
             !self.policy.is_settled,
             FreightDelayError::PolicyAlreadySettled
@@ -64,13 +69,28 @@ impl<'info> SettlePolicy<'info> {
             Clock::get()?.unix_timestamp >= deadline,
             FreightDelayError::PolicyNotMature
         );
+
+        // The attestation must be about this policy's shipment, and its nonce
+        // must be this policy's id, so a signature for one policy can never
+        // settle another.
         require!(
-            self.delivery_report.shipment_id == self.policy.shipment_id,
+            attestation.shipment_id == self.policy.shipment_id,
             FreightDelayError::DeliveryMismatch
         );
+        require!(
+            attestation.nonce == self.policy.policy_id,
+            FreightDelayError::AttestationRejected
+        );
+
+        verify_ed25519_attestation(
+            &self.instructions.to_account_info(),
+            &self.config.oracle_authority.to_bytes(),
+            &attestation.to_message(),
+            &signature,
+        )?;
 
         let payout = self.policy.payout_amount;
-        let triggered = self.delivery_report.actual_delivery > deadline;
+        let triggered = attestation.actual_delivery > deadline;
 
         self.config.total_locked_risk = self
             .config
@@ -99,13 +119,24 @@ impl<'info> SettlePolicy<'info> {
         self.policy.is_settled = true;
         self.config.assert_solvent()?;
 
+        // The on-chain record of what the oracle attested, emitted for every
+        // settlement so the delivery history is reconstructible off-chain.
+        emit!(DeliveryAttested {
+            config: self.config.key(),
+            policy: self.policy.key(),
+            shipment_id: attestation.shipment_id,
+            actual_delivery: attestation.actual_delivery,
+            terminal_code: attestation.terminal_code,
+            nonce: attestation.nonce,
+        });
+
         emit!(PolicySettled {
             config: self.config.key(),
             policy: self.policy.key(),
             insured: self.policy.insured,
             triggered,
             payout_amount: payout,
-            actual_delivery: self.delivery_report.actual_delivery,
+            actual_delivery: attestation.actual_delivery,
             expected_delivery: self.policy.expected_delivery,
             grace_period: self.policy.grace_period,
         });

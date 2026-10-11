@@ -47,20 +47,9 @@ the `anchor-lang` `init-if-needed` feature is enabled.
 `policy_id` appears in the seeds, so `#[instruction(policy_id: u64)]` is required
 on the struct — Anchor cannot derive the address otherwise.
 
-## `report_delivery_milestone(shipment_id: u64, actual_delivery: i64, terminal_code: u64)`
 
-| Account | Flags | Constraints |
-|---|---|---|
-| `reporter` | `mut`, signer | Must equal `config.oracle_authority`, checked in the handler |
-| `config` | read | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
-| `delivery_report` | **init** | `seeds = [delivery, shipment_id]`, `payer = reporter`, `space = 8 + DeliveryReport::INIT_SPACE` |
-| `system_program` | read | — |
 
-`config` is not `mut` here — the handler performs no pool mutation, so it needs
-no write lock. The account is read only to check the reporter against
-`oracle_authority`.
-
-## `settle_policy()`
+## `settle_policy(attestation: DeliveryAttestation, signature: [u8; 64])`
 
 | Account | Flags | Constraints |
 |---|---|---|
@@ -69,15 +58,20 @@ no write lock. The account is read only to check the reporter against
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `policy` | `mut` | `seeds = [policy, config, policy.policy_id]`, `bump = policy.bump` |
-| `delivery_report` | read | `seeds = [delivery, policy.shipment_id]`, `bump = delivery_report.bump` |
 | `insured_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = policy.insured` |
+| `instructions` | read | `address = solana_instructions_sysvar::ID` — the instructions sysvar |
 | `token_program` | read | — |
 
-This is the clearest illustration of why PDAs matter: the `policy` and
-`delivery_report` addresses are derived from *other accounts' fields*
-(`policy.policy_id`, `policy.shipment_id`), so the caller cannot substitute
-unrelated accounts. The payout destination is likewise pinned to `policy.insured`
-rather than being supplied.
+The `policy` address is derived from `config` and `policy.policy_id`, so the
+caller cannot substitute an unrelated policy. The payout destination is likewise
+pinned to `policy.insured` rather than being supplied.
+
+The `instructions` account is the sysvar, not a real program account. The handler
+reads it to find the ed25519 precompile instruction that must precede
+`settle_policy` in the same transaction, and refuses the call if that instruction
+is absent or does not carry exactly the configured `oracle_authority`, the
+attestation's 32-byte message, and the supplied signature. This is what makes a
+signature valid *for this transaction* rather than merely valid.
 
 No `system_program` — nothing is created.
 

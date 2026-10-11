@@ -1,9 +1,10 @@
 # Events
 
-Six events, one per instruction, all defined in `events.rs`. Each is emitted at
-the **end** of its handler — after state mutation and after `assert_solvent()` —
-so an emitted event is proof that the transaction succeeded and its effects are
-durable.
+Six events, all defined in `events.rs`. Four are emitted one per state-mutating
+instruction, `initialize_pool` has its own, and `settle_policy` emits two. Each
+is emitted at the **end** of its handler — after state mutation and after
+`assert_solvent()` — so an emitted event is proof that the transaction succeeded
+and its effects are durable.
 
 Events are the intended integration surface for indexers: they carry the state a
 client needs without requiring account re-reads.
@@ -66,27 +67,35 @@ Note what is absent — the fee split. `net_premium` and `fee` are derivable fro
 `premium_amount` and the pool's `fee_bps` (from `PoolInitialized`), but they are
 not emitted directly.
 
-## `DeliveryReported`
+## `DeliveryAttested`
 
 ```rust
-pub struct DeliveryReported {
+pub struct DeliveryAttested {
     pub config: Pubkey,
+    pub policy: Pubkey,
     pub shipment_id: u64,
     pub actual_delivery: i64,
     pub terminal_code: u64,
-    pub timestamp: i64,
-    pub reporter: Pubkey,
+    pub nonce: u64,
 }
 ```
 
-Emitted by `report_delivery_milestone`. `config` is included for convenience even
-though the `DeliveryReport` account is not namespaced by pool — the emitting pool
-is recorded, the account is shared.
+Emitted by `settle_policy` for every settlement, alongside `PolicySettled`. This
+is the **on-chain record of what the oracle attested**: the delivery fact that
+resolved the policy.
 
-`actual_delivery` is the arrival the carrier or AIS feed reported;
-`timestamp` is `Clock::unix_timestamp` at attestation. The latter is emitted here
-and stored on the account, but **no handler ever reads it**, so nothing on chain
-enforces any relationship between attestation time and the arrival it describes.
+There is no `reporter` field by design. The evidence for an attestation is the
+ed25519 signature `settle_policy` verified, not the identity of a wallet that
+submitted a transaction — so the event reports the attested fact rather than who
+delivered it.
+
+`nonce` is emitted because it is the field that binds the signature to this
+policy: it equals `policy.policy_id`. It lets an off-chain reader verify that a
+recorded attestation could not have settled any other policy.
+
+Note that the delivery is recorded **only** here. Nothing stores it in an
+account, so an indexer listening to events is the only way to reconstruct
+delivery history on chain — and the attester is the system of record off chain.
 
 ## `PolicySettled`
 
@@ -103,10 +112,14 @@ pub struct PolicySettled {
 }
 ```
 
-Emitted by `settle_policy` on both branches. `triggered` distinguishes a payout
-from a risk release, and it is the only event field that says whether tokens
-actually moved — `payout_amount` is non-zero even when `triggered` is false,
-because it reports the policy term rather than the transfer.
+Emitted by `settle_policy` on both branches, immediately after `DeliveryAttested`.
+`triggered` distinguishes a payout from a risk release, and it is the only event
+field that says whether tokens actually moved — `payout_amount` is non-zero even
+when `triggered` is false, because it reports the policy term rather than the
+transfer.
+
+Pairing the two settlement events gives a complete record: `DeliveryAttested`
+says what the oracle attested, `PolicySettled` says what the pool did about it.
 
 A client reconstructing cash flows must read `triggered` before treating
 `payout_amount` as a payment. This is the easiest way to misread the event

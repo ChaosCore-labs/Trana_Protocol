@@ -17,9 +17,6 @@ pub const LP_POSITION_SEED: &[u8] = b"lp_position";
 #[constant]
 pub const POLICY_SEED: &[u8] = b"policy";
 
-#[constant]
-pub const DELIVERY_SEED: &[u8] = b"delivery";
-
 /// Basis-point denominator for `PoolConfig::fee_bps` (1 bp = 1/100 of 1%).
 #[constant]
 pub const FEE_DENOMINATOR: u64 = 10_000;
@@ -36,7 +33,6 @@ emitted into the IDL and visible to clients.
 | treasury | `[b"treasury", config]` | SPL `TokenAccount`, authority = `PoolConfig` PDA |
 | `LpPosition` | `[b"lp_position", config, lp]` | Bound to the LP's key |
 | `Policy` | `[b"policy", config, policy_id_le]` | `policy_id` little-endian |
-| `DeliveryReport` | `[b"delivery", shipment_id_le]` | **Not** namespaced by config |
 
 The program id is `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
 
@@ -107,10 +103,10 @@ same mint fails on the `init` constraint.
 authority is the `PoolConfig` PDA, the program moves funds only by reproducing
 `[b"config", usdc_mint, bump]` during a CPI.
 
-**Delivery reports are global.** Omitting `config` from the delivery seeds makes
-a shipment's attested arrival shared infrastructure: the same fact can be read by
-many policies, but it is written only once. A shipment that appears in two pools
-therefore shares one report.
+**There is no delivery seed.** An attested arrival is not a PDA — it is a signed
+message verified during settlement, so it has no address and no owner. The four
+literals above are therefore the entire seed surface, and `DELIVERY_SEED` was
+removed along with the delivery account.
 
 ## Related
 

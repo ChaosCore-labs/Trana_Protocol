@@ -11,10 +11,10 @@ does not form a wrong picture of the program.
 
 | Design document (§7.3) | Reality |
 |---|---|
-| 7 instructions, including `request_withdrawal` | **6 instructions.** `request_withdrawal` does not exist |
+| 7 instructions, including `request_withdrawal` | **5 instructions.** `request_withdrawal` does not exist |
 | `request_withdrawal` starts a 7-day unbonding cooldown | No cooldown of any kind. `withdraw_capital` is immediate |
 | `withdraw_capital` redeems "matured unbonded shares" | Redeems any shares the caller holds, capped by free capital |
-| `report_delivery_milestone` writes a `DeliveryReport` | **Matches** |
+| `report_delivery_milestone` writes a `DeliveryReport` | **Neither exists.** The arrival is a signed attestation verified inside `settle_policy`; nothing is written |
 
 ## Account-level
 
@@ -25,7 +25,7 @@ does not form a wrong picture of the program.
 | `LpPosition.unbonding_timestamp` | Field does not exist |
 | `Policy` keyed by `tracking_hash` | Modelled as a `u64 shipment_id`; the program has no hash type |
 | `Policy.expected_delivery`, `Policy.grace_period` | **Match** |
-| `DeliveryReport` seeds `[delivery, tracking_hash]` | Derives as `[delivery, shipment_id_le]` |
+| `DeliveryReport` seeds `[delivery, tracking_hash]` | **No such account.** No delivery seed exists; arrivals are not state |
 | `PoolConfig` seeds `[config, usdc_mint]` | **Matches** |
 | `treasury` seeds `[treasury, pool_config]` | **Matches** the derivation; differs only in what the account is |
 | `LpPosition` seeds `[lp_position, pool_config, lp]` | **Matches** |
@@ -59,14 +59,22 @@ satellites, with hardware attestation, and labels the devnet arrangement a
 
 In this repository:
 
-- No Switchboard dependency, no TEE, no HTTP, no AIS, no attestation verification.
-- `report_delivery_milestone` checks one thing:
-  `reporter.key() == config.oracle_authority`.
-- The `actual_delivery` value is trusted exactly as signed.
+- No Switchboard dependency, no TEE, no HTTP, no AIS.
+- There **is** cryptographic attestation verification, but of our own attester
+  rather than a hardware-rooted one: `settle_policy` verifies an ed25519
+  signature over the arrival against `PoolConfig.oracle_authority`, bound to the
+  settling transaction by the instruction sysvar.
+- The `actual_delivery` value is trusted exactly as signed, by the one key
+  configured at init.
 
 The distinction matters for risk assessment. The documented architecture bounds
-oracle trust with hardware attestation and independent cross-checks; the
-implemented program has no such bound.
+oracle trust with hardware attestation and independent cross-checks. The
+implemented program replaces *who is trusted* with a verifiable signature from a
+single attester — which is a real improvement over an unsigned wallet check, but
+it is not decentralised, and the trust boundary is still one key.
+
+Switchboard, the oracle the design document named, shut down in September 2026.
+See the project Decision Log for why no public oracle carries freight data.
 
 ## Claims that do hold
 
