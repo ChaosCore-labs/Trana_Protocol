@@ -32,7 +32,7 @@ freight_delay/
 │   │   ├── constants.rs      # the four PDA seeds and FEE_DENOMINATOR
 │   │   ├── error.rs          # Freight DelayError — 12 flat variants
 │   │   └── events.rs         # six events (settle_policy emits two)
-│   └── tests/test_freight_delay.rs  # 25 LiteSVM tests
+│   └── tests/test_freight_delay.rs  # 18 integration tests (7 more unit tests in shared.rs)
 ├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
 ├── src/program.ts            # hand-encoded Anchor client used by the script
 └── runbooks/                 # Surfpool deployment scaffolding (has its own README)
@@ -56,7 +56,10 @@ components come from `../rust-toolchain.toml`. `sccache` is wired in as the
 `rustc-wrapper` through `../.cargo/config.toml`.
 
 Program dependencies are deliberately narrow: `anchor-lang` 1.2.0 (with
-`init-if-needed`, used only by `deposit_capital`) and `anchor-spl` 1.2.0. The
+`init-if-needed`, used only by `deposit_capital`) and `anchor-spl` 1.2.0, plus
+`solana-instructions-sysvar` and `solana-sdk-ids` — both already in the tree via
+`anchor-lang`, pulled in directly so the sysvar binding and the ed25519 program id
+come from crates rather than literals. The
 release profile turns on `overflow-checks` with `lto = "fat"` and
 `codegen-units = 1`.
 
@@ -65,7 +68,7 @@ release profile turns on `overflow-checks` with `lto = "fat"` and
 ```bash
 cd freight_delay
 anchor build                  # -> target/deploy/freight_delay.so
-cargo nextest run             # 15 tests — this is Anchor.toml [scripts].test
+cargo nextest run             # 25 tests — this is Anchor.toml [scripts].test
 cargo check --all-targets     # fast type-check loop
 ```
 
@@ -141,8 +144,9 @@ fund its own payout. And every state-mutating handler ends with
 ## Test harness
 
 - **LiteSVM**, not `anchor-client` and not a validator: `litesvm` +
-  `litesvm-token`, with `solana-awesome` re-exports. All 15 tests live in
-  `programs/freight_delay/tests/test_freight_delay.rs`.
+  `litesvm-token`, with `solana-awesome` re-exports. 18 of the 25 tests live in
+  `programs/freight_delay/tests/test_freight_delay.rs`; the other 7 are unit tests
+  of the ed25519 precompile parsing in `src/instructions/shared.rs`.
 - Each test builds a fresh `LiteSVM` through `setup()`, airdrops four keypairs and
   creates the USDC mint plus both ATAs. There is no shared fixture, so tests
   cannot leak state into one another.
