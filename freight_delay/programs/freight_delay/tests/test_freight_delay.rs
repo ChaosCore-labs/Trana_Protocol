@@ -1,9 +1,10 @@
 #![allow(clippy::result_large_err)]
 
 use anchor_lang::{
-    AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData, ToAccountMetas, pubkey,
+    AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData, ToAccountMetas,
     solana_program::{instruction::Instruction, system_program},
 };
+use solana_ed25519_program::new_ed25519_instruction_with_signature;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use freight_delay::{accounts, events, instruction, instructions::shared::DeliveryAttestation};
 use litesvm::{LiteSVM, types::TransactionResult};
@@ -275,25 +276,13 @@ fn signed_attestation(
     let message = att.to_message();
     let signature: [u8; 64] = signer.sign_message(&message).as_ref().try_into().unwrap();
 
-    let mut data = Vec::with_capacity(16 + 32 + 64 + 32);
-    data.push(1);
-    data.push(0);
-    data.extend_from_slice(&48u16.to_le_bytes()); // signature_offset
-    data.extend_from_slice(&0xFFFFu16.to_le_bytes());
-    data.extend_from_slice(&16u16.to_le_bytes()); // public_key_offset
-    data.extend_from_slice(&0xFFFFu16.to_le_bytes());
-    data.extend_from_slice(&112u16.to_le_bytes()); // message_data_offset
-    data.extend_from_slice(&32u16.to_le_bytes());
-    data.extend_from_slice(&0xFFFFu16.to_le_bytes());
-    data.extend_from_slice(&signer.pubkey().to_bytes());
-    data.extend_from_slice(&signature);
-    data.extend_from_slice(&message);
-
-    let precompile = Instruction {
-        program_id: pubkey!("Ed25519SigVerify111111111111111111111111111"),
-        accounts: vec![],
-        data,
-    };
+    // Built by the same crate the runtime uses, so the test cannot encode the
+    // header differently from the precompile it is targeting.
+    let precompile = new_ed25519_instruction_with_signature(
+        &message,
+        &signature,
+        &signer.pubkey().to_bytes(),
+    );
 
     let settle = Instruction::new_with_bytes(
         freight_delay::id(),
@@ -715,3 +704,108 @@ fn settle_rejects_an_attestation_with_the_wrong_nonce() {
     assert!(send(&mut env.svm, &env.admin, &[precompile, settle]).is_err());
     assert!(!read_policy(&env.svm, &policy_pda(&env.config, 1)).is_settled);
 }
+
+/// Decode a lowercase hex string into a fixed-size array.
+fn from_hex<const N: usize>(hex: &str) -> [u8; N] {
+    assert_eq!(hex.len(), N * 2, "hex length mismatch");
+    let mut out = [0u8; N];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("valid hex");
+    }
+    out
+}
+
+/// The attestation below is produced by `attester/` (TypeScript), not by this
+/// test. Regenerate with `bun run scripts/attestation-vector.ts` there.
+const ATTESTER_PUBKEY_HEX: &str =
+    "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+const ATTESTER_MSG_HEX: &str =
+    "1b0000000000000014f653650000000069100000000000000100000000000000";
+const ATTESTER_SIG_HEX: &str = concat!(
+    "7b4f48da25a4f1873d700990bc6a505bda8a1a52a4cf640213b54bdd43bdf91b",
+    "f7c0cc3d81e34c87bda5f6f006d796d4136123a0add8964fe33eda4d6f106e00",
+);
+
+#[test]
+fn settle_accepts_an_attestation_signed_by_the_typescript_attester() {
+    // The cross-language contract. Both suites could pass while disagreeing
+    // about the wire format, because each checks its own encoder against its
+    // own decoder. This test is the only place the two meet: the bytes and the
+    // signature are produced by `attester/src/payload.ts` and
+    // `attester/src/signing.ts`, and must be accepted by the Rust path.
+    //
+    // If the TS layout ever drifts, this signature stops verifying.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
+    );
+    set_ts(&mut env.svm, deadline() + 1);
+
+    let message: [u8; 32] = from_hex(ATTESTER_MSG_HEX);
+    let pubkey: [u8; 32] = from_hex(ATTESTER_PUBKEY_HEX);
+    let signature: [u8; 64] = from_hex(ATTESTER_SIG_HEX);
+
+    // The vector must describe this pool's shipment and this policy's nonce,
+    // or the guard under test would be the wrong one.
+    let att = DeliveryAttestation {
+        shipment_id: SHIPMENT_ID,
+        actual_delivery: deadline() + 100,
+        terminal_code: TERMINAL_CODE,
+        nonce: 1,
+    };
+    assert_eq!(
+        att.to_message(),
+        message,
+        "Rust encoder disagrees with the attester vector"
+    );
+
+    // Retarget the pool's oracle to the attester's public key, then settle with
+    // the attester's own signature. `oracle_authority` sits at discriminator(8)
+    // + admin(32); assert the offset rather than trusting the arithmetic.
+    let mut config_raw = env.svm.get_account(&env.config).unwrap();
+    let before = freight_delay::state::PoolConfig::try_deserialize(&mut &config_raw.data[..])
+        .unwrap();
+    assert_eq!(before.admin, env.admin.pubkey(), "field order changed");
+    let offset = 8 + 32;
+    config_raw.data[offset..offset + 32].copy_from_slice(&pubkey);
+    env.svm.set_account(env.config, config_raw).unwrap();
+
+    let after = read_config(&env.svm, &env.config);
+    assert_eq!(
+        after.oracle_authority,
+        Pubkey::new_from_array(pubkey),
+        "oracle_authority is not at the expected offset"
+    );
+    assert_eq!(after.total_capital, before.total_capital, "wrote the wrong field");
+
+    let precompile = new_ed25519_instruction_with_signature(&message, &signature, &pubkey);
+
+    let settle = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::SettlePolicy {
+            attestation: att,
+            signature,
+        }
+        .data(),
+        accounts::SettlePolicy {
+            crank: env.admin.pubkey(),
+            config: env.config,
+            usdc_mint: env.usdc_mint,
+            treasury: env.treasury,
+            policy: policy_pda(&env.config, 1),
+            insured_usdc: env.shipper_usdc,
+            instructions: solana_instructions_sysvar::ID,
+            token_program: TOKEN_ID,
+        }
+        .to_account_metas(None),
+    );
+
+    let res = send(&mut env.svm, &env.admin, &[precompile, settle]);
+    assert!(
+        res.is_ok(),
+        "attester-produced signature must settle: {res:?}"
+    );
+    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
+    assert!(policy.is_settled && policy.is_paid);
+}
+

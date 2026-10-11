@@ -33,13 +33,20 @@ impl DeliveryAttestation {
     }
 }
 
-/// Verify an ed25519 signature over `message` by `attester_pubkey`, where the
-/// signature must have been submitted as an ed25519 precompile instruction
-/// **earlier in this same transaction**.
+/// Verify an ed25519 signature over `message` by `attester_pubkey`, requiring
+/// that the signature also appear as an ed25519 precompile instruction earlier
+/// in this same transaction.
 ///
-/// The sysvar scan is the part that matters. The precompile proves a signature
-/// is valid; only binding to the instruction sysvar proves it was made for THIS
-/// transaction. Without it, any historical signature replays forever.
+/// This is a *scan*, not a cryptographic call: it confirms the precompile ran
+/// over exactly these bytes in this transaction, and that the bytes it checked
+/// are the ones the caller handed us rather than some other instruction's.
+///
+/// It does **not** prevent replay. The precompile is deterministic, so the same
+/// signature bytes can be resubmitted in a later transaction and will pass this
+/// check again. What stops a replay is the caller-supplied `nonce`: it is part
+/// of the signed message and `settle_policy` requires it to equal
+/// `policy.policy_id`, so a signature can only ever settle the policy it was
+/// minted for, and `is_settled` blocks settling that policy twice.
 pub fn verify_ed25519_attestation(
     instructions_sysvar: &AccountInfo,
     attester_pubkey: &[u8; 32],
@@ -101,7 +108,7 @@ fn ed25519_ix_matches(
     let msg_off = read_u16(10) as usize;
     let msg_size = read_u16(12) as usize;
 
-    if read_u16(4) != SELF || read_u16(8) != SELF || data[14] != 0xFF || msg_size != 32 {
+    if read_u16(4) != SELF || read_u16(8) != SELF || read_u16(14) != SELF || msg_size != 32 {
         return false;
     }
 
@@ -139,4 +146,100 @@ pub fn transfer_from_treasury<'info>(
         ),
         amount,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A precompile payload with the given `message_instruction_index`.
+    ///
+    /// `ed25519_ix_matches` is the only place the program parses untrusted
+    /// precompile bytes, and it is reached in production only through a
+    /// precompile instruction the runtime has already accepted. That makes its
+    /// header checks hard to exercise from an integration test: the runtime
+    /// rejects a malformed index before our code sees it. So the parser is
+    /// tested directly.
+    fn precompile_data(msg_ix: u16) -> Vec<u8> {
+        let pubkey = [1u8; 32];
+        let signature = [2u8; 64];
+        let message = [3u8; 32];
+
+        let mut data = Vec::with_capacity(16 + 32 + 64 + 32);
+        data.push(1); // num_signatures
+        data.push(0); // padding
+        data.extend_from_slice(&48u16.to_le_bytes()); // signature_offset
+        data.extend_from_slice(&0xFFFFu16.to_le_bytes()); // signature_ix
+        data.extend_from_slice(&16u16.to_le_bytes()); // public_key_offset
+        data.extend_from_slice(&0xFFFFu16.to_le_bytes()); // public_key_ix
+        data.extend_from_slice(&112u16.to_le_bytes()); // message_data_offset
+        data.extend_from_slice(&32u16.to_le_bytes()); // message_data_size
+        data.extend_from_slice(&msg_ix.to_le_bytes()); // message_instruction_index
+        data.extend_from_slice(&pubkey);
+        data.extend_from_slice(&signature);
+        data.extend_from_slice(&message);
+        data
+    }
+
+    const PUBKEY: [u8; 32] = [1u8; 32];
+    const MESSAGE: [u8; 32] = [3u8; 32];
+    const SIGNATURE: [u8; 64] = [2u8; 64];
+
+    #[test]
+    fn accepts_an_inline_attestation() {
+        let data = precompile_data(0xFFFF);
+        assert!(ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
+    }
+
+    #[test]
+    fn rejects_a_header_whose_high_byte_is_not_0xff() {
+        // message_instruction_index is a u16 at bytes 14..16. Only 0xFFFF means
+        // "inline". 0x00FF is not inline, but comparing the low byte alone
+        // accepts it, because its low byte is 0xFF.
+        let data = precompile_data(0x00FF);
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
+    }
+
+    #[test]
+    fn rejects_a_header_pointing_at_another_instruction() {
+        let data = precompile_data(1);
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
+    }
+
+    #[test]
+    fn rejects_a_by_reference_signature_or_key() {
+        // Same guard, for the other two index fields.
+        let mut data = precompile_data(0xFFFF);
+        data[5] = 0x00; // signature_instruction_index high byte
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
+
+        let mut data = precompile_data(0xFFFF);
+        data[9] = 0x00; // public_key_instruction_index high byte
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
+    }
+
+    #[test]
+    fn rejects_a_mismatched_message_or_key_or_signature() {
+        let data = precompile_data(0xFFFF);
+        assert!(!ed25519_ix_matches(&data, &[9u8; 32], &MESSAGE, &SIGNATURE));
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &[9u8; 32], &SIGNATURE));
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &[9u8; 64]));
+    }
+
+    #[test]
+    fn rejects_a_truncated_or_multi_signature_payload() {
+        assert!(!ed25519_ix_matches(&[0u8; 15], &PUBKEY, &MESSAGE, &SIGNATURE));
+
+        let mut many = precompile_data(0xFFFF);
+        many[0] = 2; // num_signatures != 1
+        assert!(!ed25519_ix_matches(&many, &PUBKEY, &MESSAGE, &SIGNATURE));
+    }
+
+    #[test]
+    fn rejects_an_offset_that_runs_past_the_end() {
+        let mut data = precompile_data(0xFFFF);
+        // Move the message past the buffer.
+        data[10..12].copy_from_slice(&900u16.to_le_bytes());
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &SIGNATURE));
+    }
 }

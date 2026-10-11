@@ -145,9 +145,20 @@ same shipment would settle every policy written against that shipment.
 The signature check is a *scan*, not a cryptographic call. It reads the
 instruction sysvar, walks the instructions before `settle_policy`, and accepts
 only an ed25519 precompile entry that carries exactly this message, this
-signature, and `config.oracle_authority` inline. So a valid signature that is
-never submitted to the precompile is not enough, and neither is one submitted in
-an earlier transaction — which is precisely the replay this design prevents.
+signature, and `config.oracle_authority` inline. A valid signature that is never
+submitted to the precompile is therefore not enough — the bytes the precompile
+checked must be the ones the handler was handed.
+
+It does **not** prevent replay, and it is worth being precise about why. The
+precompile is deterministic: resubmitting the same signature bytes in a later
+transaction produces another precompile entry that passes this scan again. The
+scan binds a signature to a *transaction*, not to a point in time.
+
+Replay is stopped by the `nonce` instead. It is part of the signed message, and
+the handler requires `nonce == policy.policy_id`, so a signature can only ever
+settle the policy it was minted for; `is_settled` then blocks settling that
+policy a second time. Both are needed: the scan makes the signature *relevant*,
+the nonce makes it *single-purpose*.
 
 The risk is released on **both** branches. A non-triggered settle leaves
 `is_settled = true, is_paid = false` and returns the capital to free capacity.

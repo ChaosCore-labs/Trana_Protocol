@@ -30,6 +30,9 @@ solana-instructions-sysvar = "3.0.1"
 [dev-dependencies]
 base64 = "0.22"
 litesvm = { version = "0.16.0", features = ["precompiles"] }
+# Builds the ed25519 precompile instruction the way the runtime does, instead of
+# hand-rolling the header in tests. Already in the tree via litesvm.
+solana-ed25519-program = "3.0.0"
 litesvm-token = "0.16.0"
 solana-awesome = { version = "0.1.0", features = [
   "clock",

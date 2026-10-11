@@ -43,7 +43,8 @@ pub struct SettlePolicy<'info> {
         associated_token::authority = policy.insured,
     )]
     pub insured_usdc: Account<'info, TokenAccount>,
-    /// CHECK: the instructions sysvar; read to bind the attestation to THIS tx.
+    /// CHECK: the instructions sysvar; read to confirm the ed25519 precompile over
+    /// these exact bytes is present in this transaction.
     #[account(address = INSTRUCTIONS_ID)]
     pub instructions: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
@@ -71,8 +72,8 @@ impl<'info> SettlePolicy<'info> {
         );
 
         // The attestation must be about this policy's shipment, and its nonce
-        // must be this policy's id, so a signature for one policy can never
-        // settle another.
+        // must be this policy's id. The nonce is the replay bound: a signature
+        // can only ever settle the one policy it was minted for.
         require!(
             attestation.shipment_id == self.policy.shipment_id,
             FreightDelayError::DeliveryMismatch
