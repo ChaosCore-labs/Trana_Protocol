@@ -21,7 +21,7 @@ bun install         # install dependencies
 bun run dev         # dev server with HMR at http://localhost:5173
 bun run build       # production build -> .vitepress/dist
 bun run preview     # serve the built output
-bun run test        # vitest: sidebar integrity, diagram validity, source drift
+bun run test        # vitest: sidebar integrity, diagram validity, zoom, theme
 bun run test:render # browser check: diagrams drawn whole, viewer opens and closes
 bun run typecheck   # tsc --noEmit over the site, theme, tests and scripts
 bun run lint        # oxlint
@@ -142,10 +142,11 @@ Adding a page means creating the `.md` file **and** adding it to `sidebar` in
 `.vitepress/config.mts` — the sidebar test fails on either an orphan page or a
 link with no file. A page excluded via `srcExclude` is exempt.
 
-The `tests/source-sync.test.ts` suite re-derives documented facts (instruction
-names, account layouts and space allocations, error variants and codes, seed
-literals, event fields, stated counts) from the Rust source. If the program
-changes and the docs do not, `bun run test` fails.
+`bun run test` runs five suites. They check the *machinery*, not the prose:
+sidebar wiring (every page has a sidebar entry, every link resolves), diagram
+fences (they parse, no duplicate bodies), the diagram-zoom unit behaviour, the
+mermaid fence plugin, and the theme palette. Keeping a documented fact in step
+with the Rust source is a review responsibility rather than a test failure.
 
 ## Diagram rendering invariants
 
