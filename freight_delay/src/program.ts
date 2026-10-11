@@ -23,15 +23,15 @@ import {
   getI64Encoder,
   getU16Encoder,
 } from "@solana/kit";
-import { findAssociatedTokenPda } from "@solana-program/token";
+import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
+import { TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token";
+import { SYSVAR_INSTRUCTIONS_ADDRESS } from "@solana/sysvars";
 
 import { encodePayload } from "../../attester/src/payload.ts";
 import { signPayload } from "../../attester/src/signing.ts";
 
-export const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-export const SYSTEM_PROGRAM = "11111111111111111111111111111111" as Address;
-export const INSTRUCTIONS_SYSVAR = "Sysvar1nstructions1111111111111111111111111" as Address;
-export const ED25519_PROGRAM = "Ed25519SigVerify111111111111111111111111111" as Address;
+/** The ed25519 precompile id — the only address the ecosystem ships no package for. */
+const ED25519_PROGRAM = "Ed25519SigVerify111111111111111111111111111" as Address;
 
 const ae = getAddressEncoder();
 const u64 = (v: bigint) => getU64Encoder().encode(v);
@@ -79,7 +79,7 @@ export const policyPda = (programId: Address, config: Address, policyId: bigint)
   pda(programId, [text("policy"), ae.encode(config), u64(policyId)]);
 
 export const ataFor = (owner: Address, mint: Address) =>
-  findAssociatedTokenPda({ owner, tokenProgram: TOKEN_PROGRAM, mint }).then(([a]) => a);
+  findAssociatedTokenPda({ owner, tokenProgram: TOKEN_PROGRAM_ADDRESS, mint }).then(([a]) => a);
 
 // --------------------------------------------------------------- instructions
 
@@ -91,8 +91,8 @@ export function initializePool(h: Harness, feeBps: number, oracleAuthority: Addr
       { address: h.usdcMint, role: AccountRole.READONLY },
       { address: h.config, role: AccountRole.WRITABLE },
       { address: h.treasury, role: AccountRole.WRITABLE },
-      { address: TOKEN_PROGRAM, role: AccountRole.READONLY },
-      { address: SYSTEM_PROGRAM, role: AccountRole.READONLY },
+      { address: TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+      { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
     ],
     data: data(DISC.initializePool, u16(feeBps), ae.encode(oracleAuthority)),
   };
@@ -112,8 +112,8 @@ export async function depositCapital(
       { address: h.treasury, role: AccountRole.WRITABLE },
       { address: await ataFor(lp.address, h.usdcMint), role: AccountRole.WRITABLE },
       { address: await lpPositionPda(h.programId, h.config, lp.address), role: AccountRole.WRITABLE },
-      { address: TOKEN_PROGRAM, role: AccountRole.READONLY },
-      { address: SYSTEM_PROGRAM, role: AccountRole.READONLY },
+      { address: TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+      { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
     ],
     data: data(DISC.depositCapital, u64(amount)),
   };
@@ -140,8 +140,8 @@ export async function buyPolicy(
       { address: h.treasury, role: AccountRole.WRITABLE },
       { address: await ataFor(insured.address, h.usdcMint), role: AccountRole.WRITABLE },
       { address: await policyPda(h.programId, h.config, a.policyId), role: AccountRole.WRITABLE },
-      { address: TOKEN_PROGRAM, role: AccountRole.READONLY },
-      { address: SYSTEM_PROGRAM, role: AccountRole.READONLY },
+      { address: TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+      { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
     ],
     data: data(
       DISC.buyPolicy,
@@ -209,8 +209,8 @@ export async function settlePolicy(
       { address: h.treasury, role: AccountRole.WRITABLE },
       { address: await policyPda(h.programId, h.config, a.policyId), role: AccountRole.WRITABLE },
       { address: await ataFor(a.insured, h.usdcMint), role: AccountRole.WRITABLE },
-      { address: INSTRUCTIONS_SYSVAR, role: AccountRole.READONLY },
-      { address: TOKEN_PROGRAM, role: AccountRole.READONLY },
+      { address: SYSVAR_INSTRUCTIONS_ADDRESS, role: AccountRole.READONLY },
+      { address: TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
     ],
     data: data(DISC.settlePolicy, a.message, a.signature),
   };
