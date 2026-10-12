@@ -107,21 +107,46 @@ test("fetch authenticates, reads the events and maps the arrival", async () => {
 test("fetch follows pagination until links.next is absent", async () => {
   const first = `${BASE}/containers/${CONTAINER}/transport_events`;
   const second = `${first}?page[number]=2`;
-  let calls = 0;
+  const requested: string[] = [];
   const source = new Terminal49Source({
     apiKey: "k",
     containers: { "27": CONTAINER },
     baseUrl: BASE,
-    fetchImpl: stubFetch({
-      [first]: page([event("container.transport.full_out", "2020-04-14T00:00:00Z")], second),
-      [second]: page([event("container.transport.vessel_arrived", "2020-04-13T01:24:00Z")]),
-    }),
+    fetchImpl: (async (url: string) => {
+      requested.push(String(url));
+      const body =
+        String(url) === first
+          ? page([event("container.transport.full_out", "2020-04-14T00:00:00Z")], second)
+          : page([event("container.transport.vessel_arrived", "2020-04-13T01:24:00Z")]);
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch,
   });
 
   const arrival = await source.fetch(27n);
   assert.equal(arrival?.actualDelivery, BigInt(Date.parse("2020-04-13T01:24:00Z") / 1000));
-  calls += 1;
-  assert.equal(calls, 1);
+  assert.deepEqual(requested, [first, second]);
+});
+
+test("fetch refuses a next page that leaves the configured HTTPS origin", async () => {
+  const first = `${BASE}/containers/${CONTAINER}/transport_events`;
+  const requested: string[] = [];
+  const source = new Terminal49Source({
+    apiKey: "secret",
+    containers: { "27": CONTAINER },
+    baseUrl: BASE,
+    fetchImpl: (async (url: string) => {
+      requested.push(String(url));
+      const body = page(
+        [event("container.transport.full_out", "2020-04-14T00:00:00Z")],
+        "https://evil.example/containers/next",
+      );
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch,
+  });
+
+  await assert.rejects(() => source.fetch(27n), /HTTPS origin/);
+  // The credential never left the configured host.
+  assert.deepEqual(requested, [first]);
 });
 
 test("fetch surfaces a non-ok response instead of inventing an arrival", async () => {

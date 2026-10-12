@@ -85,6 +85,20 @@ export function terminalArrival(events: TransportEvent[]): Arrival | null {
   return null;
 }
 
+/** The next page URL, allowed only if it stays on the configured HTTPS origin. */
+export function nextPageUrl(
+  next: string | null | undefined,
+  current: string,
+  baseUrl: string,
+): string | null {
+  if (!next) return null;
+  const resolved = new URL(next, current);
+  if (resolved.protocol !== "https:" || resolved.origin !== new URL(baseUrl).origin) {
+    throw new Error("Terminal49 pagination must stay on the configured HTTPS origin");
+  }
+  return resolved.href;
+}
+
 export class Terminal49Source implements ArrivalSource {
   readonly name = "terminal49";
 
@@ -120,7 +134,9 @@ export class Terminal49Source implements ArrivalSource {
       }
       const page = (await response.json()) as TransportEventsPage;
       events.push(...(page.data ?? []));
-      url = page.links?.next ?? null;
+      // The credential rides on every request, so a `links.next` must not be
+      // followed off the configured origin.
+      url = nextPageUrl(page.links?.next, url, this.baseUrl);
     }
 
     return events;

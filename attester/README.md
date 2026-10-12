@@ -58,7 +58,7 @@ different one. Any change here is a breaking change to the on-chain verify.
 
 ```bash
 bun install
-bun test          # 24 tests
+bun test          # 25 tests
 bun run typecheck
 bun run attest    # print a signed attestation for one arrival
 ```
