@@ -89,9 +89,10 @@ ed25519 signature `settle_policy` verified, not the identity of a wallet that
 submitted a transaction — so the event reports the attested fact rather than who
 delivered it.
 
-`nonce` is emitted because it is the field that binds the signature to this
-policy: it equals `policy.policy_id`. It lets an off-chain reader verify that a
-recorded attestation could not have settled any other policy.
+`nonce` is emitted because it is the within-pool binding: it equals
+`policy.policy_id`. Together with the pool key inside the signed message — which
+`config` reports — it lets an off-chain reader verify that a recorded attestation
+could not have settled any other policy, in this pool or another one.
 
 Note that the delivery is recorded **only** here. Nothing stores it in an
 account, so an indexer listening to events is the only way to reconstruct

@@ -28,9 +28,9 @@ Anchor numbers custom errors from 6000, in declaration order.
 | Code | Variant | Message | Raised by |
 |---|---|---|---|
 | 6000 | `Unauthorized` | Only the configured authority may perform this action. | `withdraw_capital` `lp_position` constraint |
-| 6001 | `InvalidFee` | Fee must be between 0 and 10,000 basis points. | `initialize_pool` |
+| 6001 | `InvalidFee` | Fee must be below 10,000 basis points. | `initialize_pool` |
 | 6002 | `InvalidAmount` | Amount must be greater than zero. | `deposit_capital` (twice), `buy_policy` (twice), `withdraw_capital` (twice) |
-| 6003 | `InvalidDeadline` | Expected delivery must be in the future with a non-negative grace period. | `buy_policy` |
+| 6003 | `InvalidDeadline` | Expected delivery must be in the future and grace period non-negative, with a representable deadline. | `buy_policy` |
 | 6004 | `Insolvent` | Pool is insolvent: locked risk would exceed total capital. | `buy_policy` free-capital gate; `assert_solvent()` |
 | 6005 | `InsufficientFreeCapital` | Pool does not have enough unencumbered capital for this withdrawal. | `settle_policy` (triggered), `withdraw_capital` |
 | 6006 | `PolicyNotMature` | Policy has not reached its delivery deadline plus grace period. | `settle_policy` |
@@ -88,9 +88,9 @@ the report account was seed-derived.)
 **`AttestationRejected` is the signature gate.** It is raised in two places: when
 `attestation.nonce` is not `policy.policy_id`, and when the ed25519 precompile
 scan finds no instruction in the same transaction carrying the configured
-`oracle_authority`, the exact message, and the exact signature. One code covers
-both because the client fix is the same — obtain a fresh, correctly-bound
-attestation.
+`oracle_authority`, the exact 64-byte message — this pool's address followed by
+the delivery fields — and the exact signature. One code covers both because the
+client fix is the same — obtain a fresh, correctly-bound attestation.
 
 **`MathOverflow` is the catch-all for checked arithmetic.** Every money path
 converts `u64 → u128`, applies `checked_*`, and maps failure through

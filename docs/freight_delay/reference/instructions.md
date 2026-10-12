@@ -4,13 +4,14 @@ Every account each instruction requires, with the constraints that bind it.
 `mut` marks accounts the handler writes; everything else is read-only for that
 instruction.
 
-## `initialize_pool(fee_bps: u16, oracle_authority: Pubkey)`
+## `initialize_pool(fee_bps: u16)`
 
 | Account | Flags | Constraints |
 |---|---|---|
 | `admin` | `mut`, signer | Pays for both account creations |
 | `usdc_mint` | read | — |
-| `config` | `mut`, **init** | `seeds = [config, usdc_mint]`, `space = 8 + PoolConfig::INIT_SPACE` |
+| `oracle_authority` | signer | The attester whose key seeds the config — it must sign |
+| `config` | `mut`, **init** | `seeds = [config, usdc_mint, oracle_authority]`, `space = 8 + PoolConfig::INIT_SPACE` |
 | `treasury` | **init** | `seeds = [treasury, config]`, `token::mint = usdc_mint`, `token::authority = config` |
 | `token_program` | read | SPL Token |
 | `system_program` | read | — |
@@ -70,7 +71,8 @@ The `instructions` account is the sysvar, not a real program account. The handle
 reads it to find the ed25519 precompile instruction that must precede
 `settle_policy` in the same transaction, and refuses the call if that instruction
 is absent or does not carry exactly the configured `oracle_authority`, the
-attestation's 32-byte message, and the supplied signature. This is what makes a
+attestation's 64-byte message (the pool address followed by the delivery fields),
+and the supplied signature. This is what makes a
 signature valid *for this transaction* rather than merely valid.
 
 No `system_program` — nothing is created.

@@ -7,7 +7,7 @@
  * `settle_policy` scans for.
  */
 
-import type { Address, Instruction, KeyPairSigner, TransactionSigner } from "@solana/kit";
+import { getAddressEncoder, type Address, type Instruction, type KeyPairSigner, type TransactionSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token";
 import { SYSVAR_INSTRUCTIONS_ADDRESS } from "@solana/sysvars";
 
@@ -41,8 +41,9 @@ export interface Harness {
 
 const forProgram = (h: Harness) => ({ programAddress: h.programId });
 
-export const configPda = (programId: Address, mint: Address) =>
-  findConfigPda({ usdcMint: mint }, { programAddress: programId }).then(([a]) => a);
+/** The pool is identified by its mint and its attester, so both seed the PDA. */
+export const configPda = (programId: Address, mint: Address, oracleAuthority: Address) =>
+  findConfigPda({ usdcMint: mint, oracleAuthority }, { programAddress: programId }).then(([a]) => a);
 
 export const treasuryPda = (programId: Address, config: Address) =>
   findTreasuryPda({ config }, { programAddress: programId }).then(([a]) => a);
@@ -56,15 +57,23 @@ export const policyPda = (programId: Address, config: Address, policyId: bigint)
 export const ataFor = (owner: Address, mint: Address) =>
   findAssociatedTokenPda({ owner, tokenProgram: TOKEN_PROGRAM_ADDRESS, mint }).then(([a]) => a);
 
-export function initializePool(h: Harness, feeBps: number, oracleAuthority: Address): Instruction {
+/**
+ * Create the pool. The attester signs: its key is part of the pool's address, so
+ * nobody else can create — or squat — the pool that belongs to it.
+ */
+export function initializePool(
+  h: Harness,
+  feeBps: number,
+  oracleAuthority: TransactionSigner,
+): Instruction {
   return getInitializePoolInstruction(
     {
       admin: h.admin,
       usdcMint: h.usdcMint,
+      oracleAuthority,
       config: h.config,
       treasury: h.treasury,
       feeBps,
-      oracleAuthority,
     },
     forProgram(h),
   );
@@ -185,13 +194,14 @@ export async function settlePolicy(
   );
 }
 
+/** The delivery fields, read past the 32-byte pool prefix. */
 function attestationFields(message: Uint8Array): [bigint, bigint, bigint, bigint] {
   const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
   return [
-    view.getBigUint64(0, true),
-    view.getBigInt64(8, true),
-    view.getBigUint64(16, true),
-    view.getBigUint64(24, true),
+    view.getBigUint64(32, true),
+    view.getBigInt64(40, true),
+    view.getBigUint64(48, true),
+    view.getBigUint64(56, true),
   ];
 }
 
@@ -214,6 +224,7 @@ export async function deliveryInstructions(
   },
 ): Promise<{ instructions: Instruction[]; message: Uint8Array; signature: Uint8Array }> {
   const payload = {
+    pool: Uint8Array.from(getAddressEncoder().encode(h.config)),
     shipmentId: a.shipmentId,
     actualDelivery: a.actualDelivery,
     terminalCode: a.terminalCode,

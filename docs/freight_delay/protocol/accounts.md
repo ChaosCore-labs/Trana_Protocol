@@ -16,7 +16,9 @@ erroring, so nothing fails at build time. Treat the field order below as frozen.
 
 ## `PoolConfig` — the accounting hub
 
-Seeds `[b"config", usdc_mint]`. One pool per USDC mint.
+Seeds `[b"config", usdc_mint, oracle_authority]`. One pool per *(mint, attester)*
+pair: the attester's key sits inside the address, so the pool for a known attester
+cannot be created — or squatted — by anyone else.
 
 | Field | Type | Bytes | Meaning |
 |---|---|---|---|
@@ -103,7 +105,10 @@ without a transfer. `is_paid` is write-once-true and never reset.
 
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
 settlement time rather than stored. Neither term is validated for realism: any
-future `expected_delivery` and any non-negative `grace_period` is accepted.
+future `expected_delivery` and any non-negative `grace_period` is accepted,
+provided the sum is representable — `buy_policy` rejects a pair that overflows
+`i64`, because settlement recomputes the sum and `checked_add` would otherwise
+make such a policy permanently unsettleable, locking its collateral for good.
 
 ## Where the USDC actually is
 
@@ -113,8 +118,8 @@ at `initialize_pool` with seeds `[b"treasury", config]` and
 PDA is merely its authority.
 
 That indirection is the security boundary: moving funds requires the program to
-produce `[b"config", usdc_mint, bump]` as signer seeds inside a CPI, which no
-external caller can do.
+produce `[b"config", usdc_mint, oracle_authority, bump]` as signer seeds inside a
+CPI, which no external caller can do.
 
 ## Related
 

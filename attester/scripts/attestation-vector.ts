@@ -22,6 +22,7 @@ const publicKey = publicKeyFromPrivate(privateKey);
 
 // Matches the constants in test_freight_delay.rs.
 const payload: ArrivalPayload = {
+  pool: new Uint8Array(32).fill(11), // ATTESTER_POOL_HEX
   shipmentId: 27n,
   actualDelivery: 1_700_001_300n, // BASE_TS + SLA_DELTA + 100
   terminalCode: 4201n,
@@ -32,6 +33,7 @@ const message = encodePayload(payload);
 const signature = signPayload(payload, privateKey);
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
+console.log(`ATTESTER_POOL_HEX   = "${hex(payload.pool)}"`);
 console.log(`ATTESTER_PUBKEY_HEX = "${hex(publicKey)}"`);
 console.log(`ATTESTER_MSG_HEX    = "${hex(message)}"`);
 console.log(`ATTESTER_SIG_HEX    = "${hex(signature)}"`);

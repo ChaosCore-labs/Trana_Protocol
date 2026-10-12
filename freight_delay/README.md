@@ -32,7 +32,7 @@ freight_delay/
 │   │   ├── constants.rs      # the four PDA seeds and FEE_DENOMINATOR
 │   │   ├── error.rs          # Freight DelayError — 12 flat variants
 │   │   └── events.rs         # six events (settle_policy emits two)
-│   └── tests/test_freight_delay.rs  # 18 integration tests (7 more unit tests in shared.rs)
+│   └── tests/test_freight_delay.rs  # 21 integration tests (7 more unit tests in shared.rs)
 ├── client/program.ts         # lifecycle harness over the generated client
 ├── client/generated/         # Codama client generated from target/idl — do not hand-edit
 ├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
@@ -70,7 +70,7 @@ release profile turns on `overflow-checks` with `lto = "fat"` and
 ```bash
 cd freight_delay
 anchor build                  # -> target/deploy/freight_delay.so
-cargo nextest run             # 25 tests — this is Anchor.toml [scripts].test
+cargo nextest run             # 28 tests — this is Anchor.toml [scripts].test
 cargo check --all-targets     # fast type-check loop
 ```
 
@@ -93,7 +93,7 @@ is.
 
 | Account | Seeds | Notes |
 |---|---|---|
-| `PoolConfig` | `[b"config", usdc_mint]` | All pool accounting lives here. |
+| `PoolConfig` | `[b"config", usdc_mint, oracle_authority]` | All pool accounting lives here. The attester's key is part of the address, so the pool for a given attester cannot be created — or squatted — by anyone else. |
 | treasury | `[b"treasury", config]` | An SPL token account owned by the token program, with `PoolConfig` as its authority — the only account the program signs for. |
 | `LpPosition` | `[b"lp_position", config, lp]` | Share balance per LP. |
 | `Policy` | `[b"policy", config, policy_id_le]` | One per purchase. |
@@ -104,7 +104,7 @@ There is no delivery seed: an attested arrival is a signed message, not an accou
 
 | Instruction | Signer | Effect | Notable guards |
 |---|---|---|---|
-| `initialize_pool` | admin | Creates `PoolConfig` and the treasury | `fee_bps <= 10_000` |
+| `initialize_pool` | admin + attester | Creates `PoolConfig` and the treasury | `fee_bps < 10_000`; the attester must sign |
 | `deposit_capital` | LP | USDC → treasury, mints shares | `amount != 0`, `shares != 0` |
 | `buy_policy` | shipper | Premium → treasury, locks payout risk | `payout != 0`, `premium != 0`, `expected_delivery > now`, `grace_period >= 0`, `free_capital >= payout` |
 | `settle_policy` | any signer | Pays the shipper iff delayed, always releases the locked risk | not already settled, `now >= expected_delivery + grace_period`, attestation shipment matches the policy's, `nonce == policy.policy_id`, ed25519 signature verified against `oracle_authority` |
@@ -146,7 +146,7 @@ fund its own payout. And every state-mutating handler ends with
 ## Test harness
 
 - **LiteSVM**, not `anchor-client` and not a validator: `litesvm` +
-  `litesvm-token`, with `solana-awesome` re-exports. 18 of the 25 tests live in
+  `litesvm-token`, with `solana-awesome` re-exports. 21 of the 28 tests live in
   `programs/freight_delay/tests/test_freight_delay.rs`; the other 7 are unit tests
   of the ed25519 precompile parsing in `src/instructions/shared.rs`.
 - Each test builds a fresh `LiteSVM` through `setup()`, airdrops four keypairs and

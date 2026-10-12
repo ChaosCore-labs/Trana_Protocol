@@ -8,9 +8,9 @@ module, where the guards and arithmetic live.
 
 | Instruction | Signer | Explicit guards | Event |
 |---|---|---|---|
-| `initialize_pool` | admin | `fee_bps <= 10_000` | `PoolInitialized` |
+| `initialize_pool` | admin + attester | `fee_bps < 10_000`; the attester must sign | `PoolInitialized` |
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
-| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `free_capital >= payout` | `PolicyPurchased` |
+| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `free_capital >= payout` | `PolicyPurchased` |
 
 | `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled` |
 | `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital` | `CapitalWithdrawn` |
@@ -27,18 +27,24 @@ than a `FreightDelayError`, which matters when reading test failures.
 Creates `PoolConfig` and the treasury token account.
 
 ```rust
-pub fn initialize_pool(ctx: Context<InitializePool>, fee_bps: u16, oracle_authority: Pubkey) -> Result<()>
+pub fn initialize_pool(ctx: Context<InitializePool>, fee_bps: u16) -> Result<()>
 ```
 
-- **Guards:** `fee_bps <= FEE_DENOMINATOR as u16`.
-- **Creates:** `PoolConfig` at `[b"config", usdc_mint]`, sized `8 + PoolConfig::INIT_SPACE`.
-  The treasury is created via the `init` constraint on the token account, with
-  `token::authority = config`.
+- **Guards:** `fee_bps < FEE_DENOMINATOR`. Below the denominator, not at it: a 100%
+  fee floors the net premium to zero, and a pool whose capital can reach zero can
+  never be deposited into again, because share pricing divides by it.
+- **Signers:** `admin` pays the rent; `oracle_authority` must also sign, because its
+  key is part of the pool's address.
+- **Creates:** `PoolConfig` at `[b"config", usdc_mint, oracle_authority]`, sized
+  `8 + PoolConfig::INIT_SPACE`. The treasury is created via the `init` constraint on
+  the token account, with `token::authority = config`.
 - **Effect:** every accounting field initialised to zero; `admin` is set from the
-  signer.
-- **Note:** no authority check. The first caller for a given mint becomes the
-  pool's admin, and a second call fails on the `init` constraint because the
-  `PoolConfig` PDA already exists. `fee_bps = 10_000` (100%) is accepted.
+  signer, `oracle_authority` from its own signer account.
+- **Note:** the pool is identified by *(mint, attester)*, so there is no first-caller
+  race. Nobody can create the pool belonging to an attester that has not signed for
+  it, and nobody can draw deposits to a pool of their own by publishing a different
+  attester: the address a client derives for a known attester is unreachable without
+  that attester's signature. A second call still fails on the `init` constraint.
 - **Event:** `PoolInitialized { config, usdc_mint, treasury, admin, oracle_authority, fee_bps }`
 
 ## `deposit_capital`
@@ -127,7 +133,8 @@ same transaction.
   `attestation.shipment_id == policy.shipment_id`;
   `attestation.nonce == policy.policy_id`; then the signature check — the
   instruction sysvar must contain an ed25519 precompile entry over
-  `attestation.to_message()` for `config.oracle_authority`.
+  `attestation.to_message(&config.key())`, the 64-byte message bound to *this*
+  pool, signed by `config.oracle_authority`.
 - **Trigger:** `attestation.actual_delivery > expected_delivery + grace_period`.
 - **Effect, always:** `total_locked_risk -= payout_amount`, `policy.is_settled = true`.
 - **Effect, on trigger:** `total_capital -= payout_amount`,
@@ -137,10 +144,19 @@ same transaction.
 
 Notes that are easy to get wrong:
 
-The `nonce` guard is the replay defence. The signed message includes a `nonce`
-field, and the handler requires it to equal `policy.policy_id`, so a signature
-minted for one policy cannot settle another. Without it, any attestation for the
-same shipment would settle every policy written against that shipment.
+The signed message is 64 bytes: the pool's address, then `shipment_id`,
+`actual_delivery`, `terminal_code` and `nonce`. Two bindings come out of it, and
+they stop different attacks.
+
+The pool prefix stops **cross-pool** replay. Without it a signature travels
+between pools that share an attester, because `nonce` is checked against a policy
+id the *buyer* chooses and every pool numbers its policies from zero: a captured
+signature would settle a policy the attester never saw.
+
+The `nonce` is the **within-pool** defence. It is part of the signed message, and
+the handler requires `nonce == policy.policy_id`, so a signature can only ever
+settle the policy it was minted for; `is_settled` then blocks settling that
+policy a second time.
 
 The signature check is a *scan*, not a cryptographic call. It reads the
 instruction sysvar, walks the instructions before `settle_policy`, and accepts
@@ -154,21 +170,19 @@ precompile is deterministic: resubmitting the same signature bytes in a later
 transaction produces another precompile entry that passes this scan again. The
 scan binds a signature to a *transaction*, not to a point in time.
 
-Replay is stopped by the `nonce` instead. It is part of the signed message, and
-the handler requires `nonce == policy.policy_id`, so a signature can only ever
-settle the policy it was minted for; `is_settled` then blocks settling that
-policy a second time. Both are needed: the scan makes the signature *relevant*,
-the nonce makes it *single-purpose*.
+Replay within a pool is stopped by the `nonce`, and replay across pools by the
+pool prefix — see above. What the scan adds is *relevance*: the signature must
+have been checked by the precompile in this very transaction.
 
 The risk is released on **both** branches. A non-triggered settle leaves
 `is_settled = true, is_paid = false` and returns the capital to free capacity.
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.
-The comparison has no upper bound, but it does not need one: `buy_policy`
-requires `expected_delivery > now` and the clock is monotonic, so the gate is
-satisfied permanently once the deadline passes. Every policy therefore has a
-settlement path; what it may lack is a crank to take it.
+A pair whose sum is not representable is rejected at purchase, so the addition
+never fails here: the comparison needs no upper bound because the clock is
+monotonic, and the gate stays satisfied once the deadline passes. Every policy
+therefore has a settlement path; what it may lack is a crank to take it.
 
 ## `withdraw_capital`
 

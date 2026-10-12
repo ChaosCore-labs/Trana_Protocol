@@ -17,13 +17,8 @@ declare_id!("4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs");
 pub mod freight_delay {
     use super::*;
 
-    pub fn initialize_pool(
-        ctx: Context<InitializePool>,
-        fee_bps: u16,
-        oracle_authority: Pubkey,
-    ) -> Result<()> {
-        ctx.accounts
-            .initialize_pool(fee_bps, oracle_authority, ctx.bumps)
+    pub fn initialize_pool(ctx: Context<InitializePool>, fee_bps: u16) -> Result<()> {
+        ctx.accounts.initialize_pool(fee_bps, ctx.bumps)
     }
 
     pub fn deposit_capital(ctx: Context<DepositCapital>, amount: u64) -> Result<()> {

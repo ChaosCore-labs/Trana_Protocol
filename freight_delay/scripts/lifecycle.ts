@@ -12,7 +12,7 @@
  * payload, and the same signature would be accepted on any cluster.
  */
 
-import { createClient, address, flattenInstructionPlan, generateKeyPairSigner, getBase58Decoder } from "@solana/kit";
+import { createClient, address, createKeyPairSignerFromPrivateKeyBytes, flattenInstructionPlan, generateKeyPairSigner, getBase58Decoder } from "@solana/kit";
 import { surfpool } from "@solana/surfpool/kit";
 import { getCreateAccountInstruction } from "@solana-program/system";
 import { SYSVAR_CLOCK_ADDRESS } from "@solana/sysvars";
@@ -49,6 +49,9 @@ const PREMIUM = 50_000n * USDC;
 const ATTESTER_KEY = privateKeyFromSeed(new Uint8Array(32).fill(7));
 const ATTESTER_PUBKEY = publicKeyFromPrivate(ATTESTER_KEY);
 const ATTESTER_ADDRESS = address(getBase58Decoder().decode(ATTESTER_PUBKEY));
+// The pool's address includes the attester's key, so the attester signs its
+// creation and no one else can create — or squat — this pool.
+const attester = await createKeyPairSignerFromPrivateKeyBytes(ATTESTER_KEY);
 
 let failures = 0;
 const check = (label: string, ok: boolean) => {
@@ -87,7 +90,7 @@ client.surfnet.fundSol(lp.address, 10_000_000_000);
 client.surfnet.fundSol(shipper.address, 10_000_000_000);
 
 const usdcMint = await generateKeyPairSigner();
-const config = await configPda(programId, usdcMint.address);
+const config = await configPda(programId, usdcMint.address, ATTESTER_ADDRESS);
 const treasury = await treasuryPda(programId, config);
 
 const h: Harness = {
@@ -146,11 +149,12 @@ check("USDC minted to LP and shipper", true);
 // -------------------------------------------------------------------- stage 1
 
 console.log("\nstage 1 — initialize_pool");
-await client.sendTransaction([initializePool(h, FEE_BPS, ATTESTER_ADDRESS)]);
+await client.sendTransaction([initializePool(h, FEE_BPS, attester)]);
 let pool = await readPool(h);
 report("after initialize_pool", pool);
 check(`fee_bps = ${pool.feeBps}`, pool.feeBps === FEE_BPS);
 check("capital 0", pool.totalCapital === 0n);
+check("oracle_authority is the attester", pool.oracleAuthority === ATTESTER_ADDRESS);
 
 // -------------------------------------------------------------------- stage 2
 

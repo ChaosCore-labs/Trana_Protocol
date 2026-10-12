@@ -29,7 +29,7 @@ emitted into the IDL and visible to clients.
 
 | Account | Seeds | Notes |
 |---|---|---|
-| `PoolConfig` | `[b"config", usdc_mint]` | One pool per mint |
+| `PoolConfig` | `[b"config", usdc_mint, oracle_authority]` | One pool per (mint, attester) |
 | treasury | `[b"treasury", config]` | SPL `TokenAccount`, authority = `PoolConfig` PDA |
 | `LpPosition` | `[b"lp_position", config, lp]` | Bound to the LP's key |
 | `Policy` | `[b"policy", config, policy_id_le]` | `policy_id` little-endian |
@@ -95,13 +95,16 @@ address.
 
 ## Consequences of the shapes
 
-**One pool per mint.** `[b"config", usdc_mint]` means the mint determines the
-pool, so no duplicate-pool check is needed — a second `initialize_pool` for the
-same mint fails on the `init` constraint.
+**One pool per (mint, attester).** `[b"config", usdc_mint, oracle_authority]`
+means the pair determines the pool, so no duplicate-pool check is needed — a
+second `initialize_pool` for the same pair fails on the `init` constraint. Putting
+the attester inside the address is what removes the first-caller race: the pool a
+client derives for a known attester cannot be created — or occupied — by anyone
+who cannot sign for that attester.
 
 **The treasury is authority-by-PDA.** Because it is an SPL token account whose
 authority is the `PoolConfig` PDA, the program moves funds only by reproducing
-`[b"config", usdc_mint, bump]` during a CPI.
+`[b"config", usdc_mint, oracle_authority, bump]` during a CPI.
 
 **There is no delivery seed.** An attested arrival is not a PDA — it is a signed
 message verified during settlement, so it has no address and no owner. The four

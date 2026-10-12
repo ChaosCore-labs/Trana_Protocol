@@ -26,13 +26,14 @@ does not form a wrong picture of the program.
 | `Policy` keyed by `tracking_hash` | Modelled as a `u64 shipment_id`; the program has no hash type |
 | `Policy.expected_delivery`, `Policy.grace_period` | **Match** |
 | `DeliveryReport` seeds `[delivery, tracking_hash]` | **No such account.** No delivery seed exists; arrivals are not state |
-| `PoolConfig` seeds `[config, usdc_mint]` | **Matches** |
+| `PoolConfig` seeds `[config, usdc_mint]` | **Differs.** The code adds the attester's key — `[config, usdc_mint, oracle_authority]` — so a pool is identified by *(mint, attester)*, and nobody who cannot sign for that attester can create its pool |
 | `treasury` seeds `[treasury, pool_config]` | **Matches** the derivation; differs only in what the account is |
 | `LpPosition` seeds `[lp_position, pool_config, lp]` | **Matches** |
 | `Policy` seeds `[policy, pool_config, policy_id]` | **Matches** |
 
-PDA derivations are largely faithful — the design document gets the seed shapes
-right. Where it diverges, it invents fields on accounts that exist.
+PDA derivations are otherwise faithful — the design document gets the seed shapes
+right, with the one addition above. Where it diverges elsewhere, it invents fields
+on accounts that exist.
 
 The string `unbonding` appears nowhere in `freight_delay/programs/freight_delay/src/`.
 

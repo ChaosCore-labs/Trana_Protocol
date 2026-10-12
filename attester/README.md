@@ -44,7 +44,7 @@ different one. Any change here is a breaking change to the on-chain verify.
 
 ```bash
 bun install
-bun test          # 14 tests
+bun test          # 16 tests
 bun run typecheck
 ```
 

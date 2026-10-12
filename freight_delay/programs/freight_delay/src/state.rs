@@ -2,7 +2,8 @@ use anchor_lang::prelude::*;
 
 use crate::error::FreightDelayError;
 
-/// Global pool state. One pool per USDC mint.
+/// Global pool state. One pool per (USDC mint, attester) pair: the seeds carry
+/// the attester's key, so a pool cannot be created — or squatted — without it.
 #[account]
 #[derive(InitSpace)]
 pub struct PoolConfig {

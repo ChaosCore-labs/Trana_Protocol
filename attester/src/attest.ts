@@ -12,7 +12,7 @@ import type { ArrivalSource } from "./source.ts";
 
 export interface SignedAttestation {
   payload: ArrivalPayload;
-  /** 32-byte encoding of `payload` — what the ed25519 precompile receives. */
+  /** 64-byte encoding of `payload` — what the ed25519 precompile receives. */
   message: Uint8Array;
   /** 64-byte ed25519 signature. */
   signature: Uint8Array;
@@ -22,6 +22,8 @@ export interface SignedAttestation {
 }
 
 export interface AttestOptions {
+  /** The `PoolConfig` this attestation is for, as 32 raw bytes. */
+  pool: Uint8Array;
   /** Replay guard: binds the signature to one policy (see CHA-16). */
   nonce: bigint;
   /** Raw 32-byte ed25519 seed. */
@@ -41,6 +43,7 @@ export async function attest(
   if (!arrival) return null;
 
   const payload: ArrivalPayload = {
+    pool: options.pool,
     shipmentId,
     actualDelivery: arrival.actualDelivery,
     terminalCode: arrival.terminalCode,

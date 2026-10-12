@@ -57,7 +57,8 @@ three. `initialize_pool` is the exception: it creates `PoolConfig` rather than
 writing an existing one, and starts the pool at zero risk.
 
 The attester is drawn as a dotted edge because it is **off chain**. It holds an
-ed25519 keypair and signs `(shipment_id, actual_delivery, terminal_code, nonce)`;
+ed25519 keypair and signs the pool address plus
+`(shipment_id, actual_delivery, terminal_code, nonce)`;
 the crank relays that signature into `settle_policy`, which verifies it against
 `PoolConfig.oracle_authority`. No account is written for an arrival — the
 attestation exists only inside the settling transaction.
@@ -73,22 +74,26 @@ counterparties of those four legs.
 
 | Account | Seeds | Owner | Signer authority |
 |---|---|---|---|
-| `PoolConfig` | `[b"config", usdc_mint]` | Freight Delay program | — |
+| `PoolConfig` | `[b"config", usdc_mint, oracle_authority]` | Freight Delay program | — |
 | treasury | `[b"treasury", config]` | SPL Token program | `PoolConfig` PDA |
 | `LpPosition` | `[b"lp_position", config, lp]` | Freight Delay program | — |
 | `Policy` | `[b"policy", config, policy_id_le]` | Freight Delay program | — |
 
 Two consequences follow from these shapes, and each is load-bearing:
 
-**The pool is namespaced by mint.** `PoolConfig` derives from the USDC mint, so
-one mint gets one pool, and nothing in the program has to check for a duplicate
-pool — the `init` constraint on `[b"config", usdc_mint]` makes a second
-initialisation of the same mint fail at the runtime level.
+**The pool is namespaced by (mint, attester).** `PoolConfig` derives from the USDC
+mint *and* the attester's key, so a mint-and-attester pair gets one pool, and
+nothing in the program has to check for a duplicate pool — the `init` constraint
+on `[b"config", usdc_mint, oracle_authority]` makes a second initialisation of the
+same pair fail at the runtime level. Because the attester's key is inside the
+address, the pool it belongs to cannot be created, or occupied first, by an
+attacker that cannot sign for it.
 
 **The treasury is a token account owned by a PDA.** It is not a program-owned
 data account but an SPL `TokenAccount` whose authority is the `PoolConfig` PDA.
 The program holds no private key; it can only move those funds by producing the
-`[b"config", usdc_mint, bump]` seeds during a CPI, which is exactly what
+`[b"config", usdc_mint, oracle_authority, bump]` seeds during a CPI, which is
+exactly what
 `transfer_from_treasury` does. This is why an arbitrary caller cannot drain the
 pool even if a handler forgot a signer check — the token program itself rejects
 the transfer.
@@ -111,7 +116,12 @@ pub fn transfer_from_treasury<'info>(
     config: &Account<'info, PoolConfig>,
     amount: u64,
 ) -> Result<()> {
-    let seeds: &[&[u8]] = &[CONFIG_SEED, config.usdc_mint.as_ref(), &[config.bump]];
+    let seeds: &[&[u8]] = &[
+        CONFIG_SEED,
+        config.usdc_mint.as_ref(),
+        config.oracle_authority.as_ref(),
+        &[config.bump],
+    ];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
 
     transfer(

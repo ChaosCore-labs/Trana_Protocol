@@ -45,8 +45,12 @@ struct Env {
     shipper_usdc: Pubkey,
 }
 
-fn config_pda(mint: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"config", mint.as_ref()], &freight_delay::id()).0
+fn config_pda(mint: &Pubkey, oracle: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"config", mint.as_ref(), oracle.as_ref()],
+        &freight_delay::id(),
+    )
+    .0
 }
 
 fn treasury_pda(config: &Pubkey) -> Pubkey {
@@ -81,10 +85,15 @@ fn set_ts(svm: &mut LiteSVM, ts: i64) {
 }
 
 fn send(svm: &mut LiteSVM, payer: &Keypair, ixs: &[Instruction]) -> TransactionResult {
+    send_signed(svm, &[payer], ixs)
+}
+
+/// Send with every required signer; `signers[0]` pays the fee.
+fn send_signed(svm: &mut LiteSVM, signers: &[&Keypair], ixs: &[Instruction]) -> TransactionResult {
     svm.expire_blockhash();
     let blockhash = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(ixs, Some(&payer.pubkey()), &blockhash);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[payer]).unwrap();
+    let msg = Message::new_with_blockhash(ixs, Some(&signers[0].pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
     svm.send_transaction(tx)
 }
 
@@ -162,7 +171,7 @@ fn setup() -> Env {
             .unwrap();
     }
 
-    let config = config_pda(&usdc_mint);
+    let config = config_pda(&usdc_mint, &oracle.pubkey());
     let treasury = treasury_pda(&config);
 
     Env {
@@ -182,14 +191,11 @@ fn setup() -> Env {
 fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::InitializePool {
-            fee_bps,
-            oracle_authority: env.oracle.pubkey(),
-        }
-        .data(),
+        &instruction::InitializePool { fee_bps }.data(),
         accounts::InitializePool {
             admin: env.admin.pubkey(),
             usdc_mint: env.usdc_mint,
+            oracle_authority: env.oracle.pubkey(),
             config: env.config,
             treasury: env.treasury,
             token_program: TOKEN_ID,
@@ -197,7 +203,8 @@ fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &env.admin, &[ix])
+    // The attester's key is part of the config's address, so it signs too.
+    send_signed(&mut env.svm, &[&env.admin, &env.oracle], &[ix])
 }
 
 fn deposit_capital(env: &mut Env, amount: u64) -> TransactionResult {
@@ -269,7 +276,7 @@ fn signed_attestation(
     };
     // Built from the program's own encoder, so the test cannot drift from the
     // wire format the contract verifies.
-    let message = att.to_message();
+    let message = att.to_message(&env.config);
     let signature: [u8; 64] = signer.sign_message(&message).as_ref().try_into().unwrap();
 
     // Built by the same crate the runtime uses, so the test cannot encode the
@@ -364,9 +371,52 @@ fn initialize_pool_sets_state() {
 }
 
 #[test]
-fn initialize_pool_rejects_fee_above_denominator() {
+fn initialize_pool_rejects_fee_at_or_above_the_denominator() {
+    // A 100% fee is not a fee: it floors `net_premium` to zero, and a pool whose
+    // capital can reach zero can never be deposited into again.
     let mut env = setup();
     assert!(initialize_pool(&mut env, 10_001).is_err());
+    let mut env = setup();
+    assert!(initialize_pool(&mut env, 10_000).is_err());
+    let mut env = setup();
+    assert!(initialize_pool(&mut env, 9_999).is_ok());
+}
+
+#[test]
+fn initialize_pool_rejects_an_attester_that_does_not_sign() {
+    // The config address includes the attester's key, so a squatter cannot
+    // create — and LPs cannot be pointed at — a pool for an attester that has
+    // not signed for it.
+    let mut env = setup();
+    let squatter = Keypair::new();
+    env.svm.airdrop(&squatter.pubkey(), 100_000_000_000).unwrap();
+
+    let mut metas = accounts::InitializePool {
+        admin: squatter.pubkey(),
+        usdc_mint: env.usdc_mint,
+        oracle_authority: env.oracle.pubkey(),
+        config: env.config,
+        treasury: env.treasury,
+        token_program: TOKEN_ID,
+        system_program: system_program::ID,
+    }
+    .to_account_metas(None);
+    // An attacker cannot produce the attester's signature, so the most it can do
+    // is claim the key without signing for it.
+    for meta in metas.iter_mut() {
+        if meta.pubkey == env.oracle.pubkey() {
+            meta.is_signer = false;
+        }
+    }
+
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::InitializePool { fee_bps: FEE_BPS }.data(),
+        metas,
+    );
+
+    assert!(send(&mut env.svm, &squatter, &[ix]).is_err());
+    assert!(env.svm.get_account(&env.config).is_none());
 }
 
 #[test]
@@ -451,6 +501,16 @@ fn buy_policy_rejects_payout_above_free_capital() {
         BASE_TS + SLA_DELTA,
     );
     assert!(res.is_err());
+}
+
+#[test]
+fn buy_policy_rejects_an_unrepresentable_deadline() {
+    // The deadline is recomputed at settlement, so a sum that overflows would
+    // make the policy unsettleable and lock its collateral for good.
+    let mut env = funded_pool(100_000 * UNIT);
+    let res = buy_policy(&mut env, 1, UNIT, UNIT, i64::MAX);
+    assert!(res.is_err());
+    assert!(env.svm.get_account(&policy_pda(&env.config, 1)).is_none());
 }
 
 #[test]
@@ -713,95 +773,57 @@ fn from_hex<const N: usize>(hex: &str) -> [u8; N] {
 
 /// The attestation below is produced by `attester/` (TypeScript), not by this
 /// test. Regenerate with `bun run scripts/attestation-vector.ts` there.
+const ATTESTER_POOL_HEX: &str =
+    "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
 const ATTESTER_PUBKEY_HEX: &str =
     "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
-const ATTESTER_MSG_HEX: &str =
-    "1b0000000000000014f653650000000069100000000000000100000000000000";
+const ATTESTER_MSG_HEX: &str = concat!(
+    "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+    "1b0000000000000014f653650000000069100000000000000100000000000000",
+);
 const ATTESTER_SIG_HEX: &str = concat!(
-    "7b4f48da25a4f1873d700990bc6a505bda8a1a52a4cf640213b54bdd43bdf91b",
-    "f7c0cc3d81e34c87bda5f6f006d796d4136123a0add8964fe33eda4d6f106e00",
+    "6cf94cc06d67229a1233e585781f314a2a7a5456e33e4959727fc5844e8d951e",
+    "f5fd1673c54c38de3117164a55a4e0f998d261765d838da56c766341a6639406",
 );
 
 #[test]
-fn settle_accepts_an_attestation_signed_by_the_typescript_attester() {
-    // The cross-language contract: these bytes come from `attester/` (TypeScript),
-    // so a layout drift on either side stops the signature verifying. Both
-    // suites checking their own encoder against their own decoder cannot catch
-    // that.
-    let mut env = funded_pool(1_000_000 * UNIT);
-    assert!(
-        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
-    );
-    set_ts(&mut env.svm, deadline() + 1);
-
-    let message: [u8; 32] = from_hex(ATTESTER_MSG_HEX);
-    let pubkey: [u8; 32] = from_hex(ATTESTER_PUBKEY_HEX);
-    let signature: [u8; 64] = from_hex(ATTESTER_SIG_HEX);
-
-    // The vector must describe this pool's shipment and this policy's nonce,
-    // or the guard under test would be the wrong one.
+fn to_message_matches_the_typescript_attester() {
+    // The cross-language contract: this message comes from `attester/`
+    // (TypeScript), so a layout drift on either side stops the comparison. Two
+    // suites each checking their own encoder against their own decoder cannot
+    // catch that.
     let att = DeliveryAttestation {
         shipment_id: SHIPMENT_ID,
         actual_delivery: deadline() + 100,
         terminal_code: TERMINAL_CODE,
         nonce: 1,
     };
+    let pool = Pubkey::new_from_array(from_hex::<32>(ATTESTER_POOL_HEX));
     assert_eq!(
-        att.to_message(),
-        message,
+        att.to_message(&pool),
+        from_hex::<64>(ATTESTER_MSG_HEX),
         "Rust encoder disagrees with the attester vector"
     );
-
-    // Retarget the pool's oracle to the attester's public key, then settle with
-    // the attester's own signature. `oracle_authority` sits at discriminator(8)
-    // + admin(32); assert the offset rather than trusting the arithmetic.
-    let mut config_raw = env.svm.get_account(&env.config).unwrap();
-    let before = freight_delay::state::PoolConfig::try_deserialize(&mut &config_raw.data[..])
-        .unwrap();
-    assert_eq!(before.admin, env.admin.pubkey(), "field order changed");
-    let offset = 8 + 32;
-    config_raw.data[offset..offset + 32].copy_from_slice(&pubkey);
-    env.svm.set_account(env.config, config_raw).unwrap();
-
-    let after = read_config(&env.svm, &env.config);
-    assert_eq!(
-        after.oracle_authority,
-        Pubkey::new_from_array(pubkey),
-        "oracle_authority is not at the expected offset"
-    );
-    assert_eq!(after.total_capital, before.total_capital, "wrote the wrong field");
-
-    let precompile = new_ed25519_instruction_with_signature(&message, &signature, &pubkey);
-
-    let settle = Instruction::new_with_bytes(
-        freight_delay::id(),
-        &instruction::SettlePolicy {
-            attestation: att,
-            signature,
-        }
-        .data(),
-        accounts::SettlePolicy {
-            crank: env.admin.pubkey(),
-            config: env.config,
-            usdc_mint: env.usdc_mint,
-            treasury: env.treasury,
-            policy: policy_pda(&env.config, 1),
-            insured_usdc: env.shipper_usdc,
-            instructions: solana_instructions_sysvar::ID,
-            token_program: TOKEN_ID,
-        }
-        .to_account_metas(None),
-    );
-
-    let res = send(&mut env.svm, &env.admin, &[precompile, settle]);
-    assert!(
-        res.is_ok(),
-        "attester-produced signature must settle: {res:?}"
-    );
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-    assert!(policy.is_settled && policy.is_paid);
 }
 
+#[test]
+fn the_typescript_attester_signature_verifies_through_the_precompile() {
+    // The other half of the contract: the attester's own signature over that
+    // message, checked by the precompile `settle_policy` scans. A static vector
+    // cannot describe a live pool, because the pool is part of the signed bytes
+    // and every test pool is derived from fresh keypairs — so the settlement
+    // path itself is covered by the tests that sign against `env.config`.
+    let mut env = setup();
+    let message: [u8; 64] = from_hex(ATTESTER_MSG_HEX);
+    let pubkey: [u8; 32] = from_hex(ATTESTER_PUBKEY_HEX);
+    let signature: [u8; 64] = from_hex(ATTESTER_SIG_HEX);
+
+    let precompile = new_ed25519_instruction_with_signature(&message, &signature, &pubkey);
+    assert!(
+        send(&mut env.svm, &env.admin, &[precompile]).is_ok(),
+        "the attester's signature must verify"
+    );
+}
 
 #[test]
 fn settle_releases_locked_risk_without_any_timeout_path() {

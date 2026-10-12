@@ -10,7 +10,7 @@ Trana_Protocol/
 ├── freight_delay/
 │   ├── programs/freight_delay/
 │   │   ├── src/              # the Anchor program
-│   │   └── tests/            # LiteSVM integration tests (15 tests)
+│   │   └── tests/            # LiteSVM integration tests (21 tests)
 │   ├── runbooks/             # surfpool / txtx deploy scaffolding
 │   └── Anchor.toml
 ├── mise.toml                 # toolchain pins

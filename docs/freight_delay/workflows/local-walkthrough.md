@@ -20,7 +20,7 @@ in-process, deploys the program, and then:
 | Stage | Instruction | Asserts |
 |---|---|---|
 | 0 | — | a test USDC mint exists and the LP and shipper hold balances |
-| 1 | `initialize_pool` | `fee_bps` recorded, capital starts at zero |
+| 1 | `initialize_pool` | `fee_bps` recorded, `oracle_authority` is the attester, capital starts at zero |
 | 2 | `deposit_capital` | capital equals the deposit, shares mint 1:1 |
 | 3 | `buy_policy` | payout locked, premium credited net of fee |
 | 4a | `settle_policy` | a **late** arrival pays, capital debited by the payout |
@@ -37,6 +37,9 @@ Stage 4 signs the arrival with `attester/src/signing.ts` and encodes it with
 `attester/src/payload.ts` — the same code an operator would run. The program
 accepts it because the pool was initialised with that key's raw ed25519 public
 key as `oracle_authority`.
+
+The same key also signs stage 1, because it is part of the pool's address: only
+the attester can create the pool it attests for.
 
 Nothing about the signature is mocked. Swapping in a real data source changes
 where the timestamp comes from, not what is signed.

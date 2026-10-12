@@ -18,13 +18,19 @@ pub struct DeliveryAttestation {
 }
 
 impl DeliveryAttestation {
-    /// The canonical 32-byte message the attester signs.
-    pub fn to_message(&self) -> [u8; 32] {
-        let mut buf = [0u8; 32];
-        buf[0..8].copy_from_slice(&self.shipment_id.to_le_bytes());
-        buf[8..16].copy_from_slice(&self.actual_delivery.to_le_bytes());
-        buf[16..24].copy_from_slice(&self.terminal_code.to_le_bytes());
-        buf[24..32].copy_from_slice(&self.nonce.to_le_bytes());
+    /// The canonical 64-byte message the attester signs: the pool it is for,
+    /// then the delivery fields.
+    ///
+    /// Binding the pool is what keeps a signature single-pool: `nonce` alone
+    /// bounds replay within one pool, because the id it must match is chosen by
+    /// the buyer, and every pool's ids start from the same space.
+    pub fn to_message(&self, pool: &Pubkey) -> [u8; 64] {
+        let mut buf = [0u8; 64];
+        buf[0..32].copy_from_slice(pool.as_ref());
+        buf[32..40].copy_from_slice(&self.shipment_id.to_le_bytes());
+        buf[40..48].copy_from_slice(&self.actual_delivery.to_le_bytes());
+        buf[48..56].copy_from_slice(&self.terminal_code.to_le_bytes());
+        buf[56..64].copy_from_slice(&self.nonce.to_le_bytes());
         buf
     }
 }
@@ -38,7 +44,7 @@ impl DeliveryAttestation {
 pub fn verify_ed25519_attestation(
     instructions_sysvar: &AccountInfo,
     attester_pubkey: &[u8; 32],
-    message: &[u8; 32],
+    message: &[u8; 64],
     signature: &[u8; 64],
 ) -> Result<()> {
     let current_index = load_current_index_checked(instructions_sysvar)
@@ -76,7 +82,7 @@ pub fn verify_ed25519_attestation(
 fn ed25519_ix_matches(
     data: &[u8],
     pubkey: &[u8; 32],
-    message: &[u8; 32],
+    message: &[u8],
     signature: &[u8; 64],
 ) -> bool {
     /// `0xFFFF` marks data carried inline in the precompile instruction itself.
@@ -93,7 +99,8 @@ fn ed25519_ix_matches(
     let msg_off = read_u16(10) as usize;
     let msg_size = read_u16(12) as usize;
 
-    if read_u16(4) != SELF || read_u16(8) != SELF || read_u16(14) != SELF || msg_size != 32 {
+    if read_u16(4) != SELF || read_u16(8) != SELF || read_u16(14) != SELF || msg_size != message.len()
+    {
         return false;
     }
 
@@ -102,7 +109,11 @@ fn ed25519_ix_matches(
         data.get(off..end)
     };
 
-    match (slice(sig_off, 64), slice(pk_off, 32), slice(msg_off, 32)) {
+    match (
+        slice(sig_off, 64),
+        slice(pk_off, 32),
+        slice(msg_off, message.len()),
+    ) {
         (Some(s), Some(p), Some(m)) => s == signature && p == pubkey && m == message,
         _ => false,
     }
@@ -116,7 +127,12 @@ pub fn transfer_from_treasury<'info>(
     config: &Account<'info, PoolConfig>,
     amount: u64,
 ) -> Result<()> {
-    let seeds: &[&[u8]] = &[CONFIG_SEED, config.usdc_mint.as_ref(), &[config.bump]];
+    let seeds: &[&[u8]] = &[
+        CONFIG_SEED,
+        config.usdc_mint.as_ref(),
+        config.oracle_authority.as_ref(),
+        &[config.bump],
+    ];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
 
     transfer(
@@ -144,9 +160,9 @@ mod tests {
     fn precompile_data(msg_ix: u16) -> Vec<u8> {
         let pubkey = [1u8; 32];
         let signature = [2u8; 64];
-        let message = [3u8; 32];
+        let message = [3u8; 64];
 
-        let mut data = Vec::with_capacity(16 + 32 + 64 + 32);
+        let mut data = Vec::with_capacity(16 + 32 + 64 + 64);
         data.push(1); // num_signatures
         data.push(0); // padding
         data.extend_from_slice(&48u16.to_le_bytes()); // signature_offset
@@ -154,7 +170,7 @@ mod tests {
         data.extend_from_slice(&16u16.to_le_bytes()); // public_key_offset
         data.extend_from_slice(&0xFFFFu16.to_le_bytes()); // public_key_ix
         data.extend_from_slice(&112u16.to_le_bytes()); // message_data_offset
-        data.extend_from_slice(&32u16.to_le_bytes()); // message_data_size
+        data.extend_from_slice(&64u16.to_le_bytes()); // message_data_size
         data.extend_from_slice(&msg_ix.to_le_bytes()); // message_instruction_index
         data.extend_from_slice(&pubkey);
         data.extend_from_slice(&signature);
@@ -163,7 +179,7 @@ mod tests {
     }
 
     const PUBKEY: [u8; 32] = [1u8; 32];
-    const MESSAGE: [u8; 32] = [3u8; 32];
+    const MESSAGE: [u8; 64] = [3u8; 64];
     const SIGNATURE: [u8; 64] = [2u8; 64];
 
     #[test]
@@ -202,7 +218,7 @@ mod tests {
     fn rejects_a_mismatched_message_or_key_or_signature() {
         let data = precompile_data(0xFFFF);
         assert!(!ed25519_ix_matches(&data, &[9u8; 32], &MESSAGE, &SIGNATURE));
-        assert!(!ed25519_ix_matches(&data, &PUBKEY, &[9u8; 32], &SIGNATURE));
+        assert!(!ed25519_ix_matches(&data, &PUBKEY, &[9u8; 64], &SIGNATURE));
         assert!(!ed25519_ix_matches(&data, &PUBKEY, &MESSAGE, &[9u8; 64]));
     }
 

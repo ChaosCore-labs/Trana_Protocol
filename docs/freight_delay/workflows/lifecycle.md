@@ -17,7 +17,7 @@ sequenceDiagram
 
     rect rgb(137, 180, 130, 0.12)
     Note over Admin, Treasury: Stage 1 — pool creation
-    Admin->>Program: initialize_pool(fee_bps, oracle)
+    Admin->>Program: initialize_pool(fee_bps) + attester signature
     Program->>Treasury: init, authority = PoolConfig
     Program-->>Admin: PoolInitialized
     end
@@ -41,7 +41,7 @@ sequenceDiagram
 
     rect rgb(137, 180, 130, 0.12)
     Note over Attester: Stage 4 — arrival attestation (off chain)
-    Attester->>Attester: sign (shipment, arrival, terminal, nonce)
+    Attester->>Attester: sign (pool, shipment, arrival, terminal, nonce)
     Note over Attester: no transaction, no account
     end
 
@@ -50,7 +50,7 @@ sequenceDiagram
     Crank->>Program: settle_policy(attestation, signature)
     Crank->>Program: ed25519 precompile instruction
     Program->>Program: require mature and unsettled
-    Program->>Program: require nonce == policy_id, shipment matches
+    Program->>Program: require pool prefix, nonce == policy_id, shipment matches
     Program->>Program: verify signature against oracle_authority
     Program->>Program: release locked risk
     alt arrived after the deadline

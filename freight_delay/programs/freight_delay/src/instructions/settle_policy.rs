@@ -18,7 +18,7 @@ pub struct SettlePolicy<'info> {
     pub crank: Signer<'info>,
     #[account(
         mut,
-        seeds = [CONFIG_SEED, config.usdc_mint.as_ref()],
+        seeds = [CONFIG_SEED, config.usdc_mint.as_ref(), config.oracle_authority.as_ref()],
         bump = config.bump,
     )]
     pub config: Account<'info, PoolConfig>,
@@ -84,7 +84,7 @@ impl<'info> SettlePolicy<'info> {
         verify_ed25519_attestation(
             &self.instructions.to_account_info(),
             &self.config.oracle_authority.to_bytes(),
-            &attestation.to_message(),
+            &attestation.to_message(&self.config.key()),
             &signature,
         )?;
 

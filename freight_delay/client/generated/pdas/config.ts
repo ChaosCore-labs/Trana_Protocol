@@ -10,9 +10,10 @@ import { getAddressEncoder, getBytesEncoder, getProgramDerivedAddress, type Addr
 
 export type ConfigSeeds = {
 usdcMint: Address;
+oracleAuthority: Address;
 };
 
 export async function findConfigPda(seeds: ConfigSeeds, config: { programAddress?: Address | undefined } = {}): Promise<ProgramDerivedAddress> {
   const { programAddress = '4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs' as Address<'4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs'> } = config;
-  return await getProgramDerivedAddress({ programAddress, seeds: [getBytesEncoder().encode(new Uint8Array([99, 111, 110, 102, 105, 103])), getAddressEncoder().encode(seeds.usdcMint)]});
+  return await getProgramDerivedAddress({ programAddress, seeds: [getBytesEncoder().encode(new Uint8Array([99, 111, 110, 102, 105, 103])), getAddressEncoder().encode(seeds.usdcMint), getAddressEncoder().encode(seeds.oracleAuthority)]});
 }

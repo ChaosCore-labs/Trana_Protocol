@@ -1,7 +1,7 @@
 /**
  * Attester signing (CHA-32 / CHA-16).
  *
- * The attester holds an ed25519 key and signs the 32-byte payload; the program
+ * The attester holds an ed25519 key and signs the 64-byte payload; the program
  * verifies that signature via the ed25519 precompile. This is the same primitive
  * Pyth/Chainlink/Switchboard use — we are simply the publisher.
  *
@@ -42,7 +42,7 @@ export function publicKeyFromPrivate(seed: Uint8Array): Uint8Array {
   return ed.getPublicKey(privateKeyFromSeed(seed));
 }
 
-/** Sign the canonical 32-byte encoding of a payload. Returns a 64-byte signature. */
+/** Sign the canonical 64-byte encoding of a payload. Returns a 64-byte signature. */
 export function signPayload(payload: ArrivalPayload, seed: Uint8Array): Uint8Array {
   return ed.sign(encodePayload(payload), privateKeyFromSeed(seed));
 }

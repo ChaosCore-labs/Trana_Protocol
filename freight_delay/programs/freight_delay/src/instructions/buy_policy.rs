@@ -15,7 +15,7 @@ pub struct BuyPolicy<'info> {
     pub insured: Signer<'info>,
     #[account(
         mut,
-        seeds = [CONFIG_SEED, config.usdc_mint.as_ref()],
+        seeds = [CONFIG_SEED, config.usdc_mint.as_ref(), config.oracle_authority.as_ref()],
         bump = config.bump,
     )]
     pub config: Account<'info, PoolConfig>,
@@ -65,6 +65,12 @@ impl<'info> BuyPolicy<'info> {
             FreightDelayError::InvalidDeadline
         );
         require!(grace_period >= 0, FreightDelayError::InvalidDeadline);
+        // The deadline is recomputed at settlement, so an unrepresentable sum
+        // would make the policy unsettleable and lock its collateral for good.
+        require!(
+            expected_delivery.checked_add(grace_period).is_some(),
+            FreightDelayError::InvalidDeadline
+        );
         require!(
             self.config.free_capital() >= payout_amount,
             FreightDelayError::Insolvent
