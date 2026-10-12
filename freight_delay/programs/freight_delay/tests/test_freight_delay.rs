@@ -454,6 +454,20 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
 }
 
 #[test]
+fn buy_policy_rejects_a_deadline_beyond_the_sla_horizon() {
+    // A deadline the clock cannot reach makes the policy unsettleable for good:
+    // the maturity gate is `now >= deadline` and there is no timeout (pre-freeze audit:
+    // unreachable deadline).
+    let mut env = funded_pool(1_000_000 * UNIT);
+    let horizon = BASE_TS + freight_delay::MAX_SLA_SECONDS;
+
+    assert!(buy_policy(&mut env, 1, 100_000 * UNIT, 1_000 * UNIT, horizon).is_ok());
+    assert!(buy_policy(&mut env, 2, 100_000 * UNIT, 1_000 * UNIT, horizon + 1).is_err());
+    assert!(buy_policy(&mut env, 3, 100_000 * UNIT, 1_000 * UNIT, i64::MAX).is_err());
+    assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 1);
+}
+
+#[test]
 fn buy_policy_requires_a_strictly_increasing_policy_id() {
     let mut env = funded_pool(1_000_000 * UNIT);
     assert!(buy_policy(&mut env, 5, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
@@ -485,6 +499,77 @@ fn buy_policy_rejects_reusing_a_closed_policy_id() {
         "a closed id cannot be bought back"
     );
     assert!(buy_policy(&mut env, 2, 500_000 * UNIT, 50_000 * UNIT, later).is_ok());
+}
+
+#[test]
+fn withdraw_cannot_strand_shares_with_zero_capital() {
+    // Pre-freeze audit, zero-capital brick: withdrawing the last unit of free capital
+    // while a payout is still
+    // locked lets the next triggered settlement drive `total_capital` to zero, and
+    // both pricing divisions then fail — the pool can never be deposited into or
+    // redeemed again. The redemption that would do it is now refused.
+    let capital = 100 * UNIT;
+    let mut env = funded_pool(capital);
+    assert!(buy_policy(&mut env, 1, 99 * UNIT, 100 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+
+    // Every unit of the 99 USDC free capital hangs on this one redemption.
+    assert!(withdraw_capital(&mut env, 50 * UNIT).is_err());
+
+    // A smaller redemption leaves the pool able to absorb its payout.
+    assert!(withdraw_capital(&mut env, 49 * UNIT).is_ok());
+    let after = read_config(&env.svm, &env.config);
+    assert!(
+        after.total_capital > after.total_locked_risk,
+        "some capital stays free while shares are outstanding"
+    );
+
+    set_ts(&mut env.svm, deadline() + 1);
+    assert!(settle_policy(&mut env, 1, deadline() + 100).is_ok());
+    let settled = read_config(&env.svm, &env.config);
+    assert!(settled.total_capital > 0, "the payout no longer zeroes the pool");
+
+    // And the pool is still usable, which is the whole point.
+    assert!(deposit_capital(&mut env, UNIT).is_ok());
+}
+
+
+/// The pre-freeze audit's own brick reproduction, replayed step for step with the
+/// zero-fee pool it used: deposit, write a payout the free capital exactly covers,
+/// redeem that free capital, settle. Before the fix the redemption emptied the free
+/// capital and the settle took `total_capital` to exactly zero with shares still
+/// outstanding — the pool was dead for good. It must now be refused.
+#[test]
+fn the_original_brick_sequence_is_refused() {
+    let capital = 100 * UNIT;
+    let mut env = setup();
+    assert!(initialize_pool(&mut env, 0).is_ok());
+    assert!(deposit_capital(&mut env, capital).is_ok());
+    assert!(buy_policy(&mut env, 1, 100 * UNIT, 100 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+
+    let bought = read_config(&env.svm, &env.config);
+    assert_eq!(bought.total_capital, 200 * UNIT);
+    assert_eq!(bought.total_locked_risk, 100 * UNIT);
+    assert_eq!(bought.total_shares, 100 * UNIT);
+    assert_eq!(bought.free_capital(), 100 * UNIT);
+
+    // 50 shares price at exactly the 100 USDC that is still free: this is the
+    // attack step, and it is refused.
+    assert!(withdraw_capital(&mut env, 50 * UNIT).is_err());
+
+    // One unit less leaves capital free, and the pool absorbs its payout.
+    assert!(withdraw_capital(&mut env, 49 * UNIT).is_ok());
+    set_ts(&mut env.svm, deadline() + 1);
+    assert!(settle_policy(&mut env, 1, deadline() + 100).is_ok());
+
+    let settled = read_config(&env.svm, &env.config);
+    assert_eq!(settled.total_capital, 2 * UNIT);
+    assert_eq!(settled.total_locked_risk, 0);
+    assert_eq!(settled.total_shares, 51 * UNIT);
+
+    // The point of the fix: the pool is still alive, so both pricing divisions
+    // still have a non-zero denominator.
+    assert!(deposit_capital(&mut env, UNIT).is_ok());
+    assert!(withdraw_capital(&mut env, 2 * UNIT).is_ok());
 }
 
 #[test]

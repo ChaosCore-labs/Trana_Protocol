@@ -8,11 +8,11 @@ pub enum FreightDelayError {
     InvalidFee,
     #[msg("Amount must be greater than zero.")]
     InvalidAmount,
-    #[msg("Expected delivery must be in the future and grace period non-negative, with a representable deadline.")]
+    #[msg("Expected delivery must be in the future and within the maximum SLA horizon, and grace period non-negative, with a representable deadline.")]
     InvalidDeadline,
     #[msg("Pool is insolvent: locked risk would exceed total capital.")]
     Insolvent,
-    #[msg("Pool does not have enough unencumbered capital for this withdrawal.")]
+    #[msg("Pool does not have enough unencumbered capital for this withdrawal, or the withdrawal would leave none while shares remain.")]
     InsufficientFreeCapital,
     #[msg("Policy has not reached its delivery deadline plus grace period.")]
     PolicyNotMature,

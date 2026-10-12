@@ -60,11 +60,19 @@ impl<'info> BuyPolicy<'info> {
     ) -> Result<()> {
         require_neq!(payout_amount, 0, FreightDelayError::InvalidAmount);
         require_neq!(premium_amount, 0, FreightDelayError::InvalidAmount);
+        let now = Clock::get()?.unix_timestamp;
+        require!(expected_delivery > now, FreightDelayError::InvalidDeadline);
+        require!(grace_period >= 0, FreightDelayError::InvalidDeadline);
+        // A deadline the clock can never reach would lock the payout for good:
+        // the maturity gate is `now >= deadline` and there is no timeout path
+        // (pre-freeze audit: unreachable deadline).
+        let horizon = now
+            .checked_add(MAX_SLA_SECONDS)
+            .ok_or(FreightDelayError::InvalidDeadline)?;
         require!(
-            expected_delivery > Clock::get()?.unix_timestamp,
+            expected_delivery <= horizon,
             FreightDelayError::InvalidDeadline
         );
-        require!(grace_period >= 0, FreightDelayError::InvalidDeadline);
         // The deadline is recomputed at settlement, so an unrepresentable sum
         // would make the policy unsettleable and lock its collateral for good.
         require!(
