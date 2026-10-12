@@ -15,12 +15,24 @@ export const SETTLE_POLICY_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([1
 
 export function getSettlePolicyDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(SETTLE_POLICY_DISCRIMINATOR); }
 
-export type SettlePolicyInstruction<TProgram extends string = typeof FREIGHT_DELAY_PROGRAM_ADDRESS, TAccountCrank extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountUsdcMint extends string | AccountMeta<string> = string, TAccountTreasury extends string | AccountMeta<string> = string, TAccountPolicy extends string | AccountMeta<string> = string, TAccountInsuredUsdc extends string | AccountMeta<string> = string, TAccountInstructions extends string | AccountMeta<string> = "Sysvar1nstructions1111111111111111111111111", TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
-Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountCrank extends string ? WritableSignerAccount<TAccountCrank> & AccountSignerMeta<TAccountCrank> : TAccountCrank, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountUsdcMint extends string ? ReadonlyAccount<TAccountUsdcMint> : TAccountUsdcMint, TAccountTreasury extends string ? WritableAccount<TAccountTreasury> : TAccountTreasury, TAccountPolicy extends string ? WritableAccount<TAccountPolicy> : TAccountPolicy, TAccountInsuredUsdc extends string ? WritableAccount<TAccountInsuredUsdc> : TAccountInsuredUsdc, TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, ...TRemainingAccounts]>;
+export type SettlePolicyInstruction<TProgram extends string = typeof FREIGHT_DELAY_PROGRAM_ADDRESS, TAccountCrank extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountUsdcMint extends string | AccountMeta<string> = string, TAccountTreasury extends string | AccountMeta<string> = string, TAccountPolicy extends string | AccountMeta<string> = string, TAccountInsured extends string | AccountMeta<string> = string, TAccountInsuredUsdc extends string | AccountMeta<string> = string, TAccountInstructions extends string | AccountMeta<string> = "Sysvar1nstructions1111111111111111111111111", TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
+Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountCrank extends string ? WritableSignerAccount<TAccountCrank> & AccountSignerMeta<TAccountCrank> : TAccountCrank, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountUsdcMint extends string ? ReadonlyAccount<TAccountUsdcMint> : TAccountUsdcMint, TAccountTreasury extends string ? WritableAccount<TAccountTreasury> : TAccountTreasury, TAccountPolicy extends string ? WritableAccount<TAccountPolicy> : TAccountPolicy, TAccountInsured extends string ? WritableAccount<TAccountInsured> : TAccountInsured, TAccountInsuredUsdc extends string ? WritableAccount<TAccountInsuredUsdc> : TAccountInsuredUsdc, TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, ...TRemainingAccounts]>;
 
-export type SettlePolicyInstructionData = { discriminator: ReadonlyUint8Array; shipmentId: bigint; actualDelivery: bigint; terminalCode: bigint; nonce: bigint; signature: ReadonlyUint8Array;  };
+export type SettlePolicyInstructionData = { discriminator: ReadonlyUint8Array; shipmentId: bigint; 
+/**
+ * The attested **destination-terminal arrival**, unix seconds: the event a
+ * carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
+ * delivery (CHA-33).
+ */
+actualDelivery: bigint; terminalCode: bigint; nonce: bigint; signature: ReadonlyUint8Array;  };
 
-export type SettlePolicyInstructionDataArgs = { shipmentId: number | bigint; actualDelivery: number | bigint; terminalCode: number | bigint; nonce: number | bigint; signature: ReadonlyUint8Array;  };
+export type SettlePolicyInstructionDataArgs = { shipmentId: number | bigint; 
+/**
+ * The attested **destination-terminal arrival**, unix seconds: the event a
+ * carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
+ * delivery (CHA-33).
+ */
+actualDelivery: number | bigint; terminalCode: number | bigint; nonce: number | bigint; signature: ReadonlyUint8Array;  };
 
 export function getSettlePolicyInstructionDataEncoder(): FixedSizeEncoder<SettlePolicyInstructionDataArgs> {
     return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['shipmentId', getU64Encoder()], ['actualDelivery', getI64Encoder()], ['terminalCode', getU64Encoder()], ['nonce', getU64Encoder()], ['signature', fixEncoderSize(getBytesEncoder(), 64)]]), (value) => ({ ...value, discriminator: SETTLE_POLICY_DISCRIMINATOR }));
@@ -34,12 +46,17 @@ export function getSettlePolicyInstructionDataCodec(): FixedSizeCodec<SettlePoli
     return combineCodec(getSettlePolicyInstructionDataEncoder(), getSettlePolicyInstructionDataDecoder());
 }
 
-export type SettlePolicyAsyncInput<TAccountCrank extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput, TAccountTreasury extends InstructionAccountInput = InstructionAccountInput, TAccountPolicy extends InstructionAccountInput = InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput = InstructionAccountInput, TAccountInstructions extends InstructionAccountInput = InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput> =  {
+export type SettlePolicyAsyncInput<TAccountCrank extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput, TAccountTreasury extends InstructionAccountInput = InstructionAccountInput, TAccountPolicy extends InstructionAccountInput = InstructionAccountInput, TAccountInsured extends InstructionAccountInput = InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput = InstructionAccountInput, TAccountInstructions extends InstructionAccountInput = InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput> =  {
   crank: TAccountCrank;
 config: TAccountConfig;
 usdcMint: TAccountUsdcMint;
 treasury?: TAccountTreasury;
 policy: TAccountPolicy;
+/**
+ * The shipper's wallet: where the closed policy's rent goes. Pinned to the
+ * account the policy names, so the rent cannot be redirected.
+ */
+insured: TAccountInsured;
 insuredUsdc: TAccountInsuredUsdc;
 instructions?: TAccountInstructions;
 tokenProgram?: TAccountTokenProgram;
@@ -50,7 +67,7 @@ nonce: SettlePolicyInstructionDataArgs["nonce"];
 signature: SettlePolicyInstructionDataArgs["signature"];
 }
 
-export async function getSettlePolicyInstructionAsync<TAccountCrank extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput, TAccountTreasury extends InstructionAccountInput, TAccountPolicy extends InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput, TAccountInstructions extends InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof FREIGHT_DELAY_PROGRAM_ADDRESS>(input: SettlePolicyAsyncInput<TAccountCrank, TAccountConfig, TAccountUsdcMint, TAccountTreasury, TAccountPolicy, TAccountInsuredUsdc, TAccountInstructions, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): Promise<SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>>> {
+export async function getSettlePolicyInstructionAsync<TAccountCrank extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput, TAccountTreasury extends InstructionAccountInput, TAccountPolicy extends InstructionAccountInput, TAccountInsured extends InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput, TAccountInstructions extends InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof FREIGHT_DELAY_PROGRAM_ADDRESS>(input: SettlePolicyAsyncInput<TAccountCrank, TAccountConfig, TAccountUsdcMint, TAccountTreasury, TAccountPolicy, TAccountInsured, TAccountInsuredUsdc, TAccountInstructions, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): Promise<SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsured, InstructionAccountInputAddress<TAccountInsured>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>>> {
   // Program address.
 const programAddress = config?.programAddress ?? FREIGHT_DELAY_PROGRAM_ADDRESS;
 
@@ -58,7 +75,7 @@ const programAddress = config?.programAddress ?? FREIGHT_DELAY_PROGRAM_ADDRESS;
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { crank: { value: input.crank ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isSigner: false, isWritable: false }, treasury: { value: input.treasury ?? null, isSigner: false, isWritable: true }, policy: { value: input.policy ?? null, isSigner: false, isWritable: true }, insuredUsdc: { value: input.insuredUsdc ?? null, isSigner: false, isWritable: true }, instructions: { value: input.instructions ?? null, isSigner: false, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { crank: { value: input.crank ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isSigner: false, isWritable: false }, treasury: { value: input.treasury ?? null, isSigner: false, isWritable: true }, policy: { value: input.policy ?? null, isSigner: false, isWritable: true }, insured: { value: input.insured ?? null, isSigner: false, isWritable: true }, insuredUsdc: { value: input.insuredUsdc ?? null, isSigner: false, isWritable: true }, instructions: { value: input.instructions ?? null, isSigner: false, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isSigner: false, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -77,15 +94,20 @@ if (!accounts.tokenProgram.value) {
 accounts.tokenProgram.value = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
 }
 
-return Object.freeze({ accounts: [getAccountMeta("crank", accounts.crank), getAccountMeta("config", accounts.config), getAccountMeta("usdcMint", accounts.usdcMint), getAccountMeta("treasury", accounts.treasury), getAccountMeta("policy", accounts.policy), getAccountMeta("insuredUsdc", accounts.insuredUsdc), getAccountMeta("instructions", accounts.instructions), getAccountMeta("tokenProgram", accounts.tokenProgram)], data: getSettlePolicyInstructionDataEncoder().encode(args as SettlePolicyInstructionDataArgs), programAddress } as SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>>);
+return Object.freeze({ accounts: [getAccountMeta("crank", accounts.crank), getAccountMeta("config", accounts.config), getAccountMeta("usdcMint", accounts.usdcMint), getAccountMeta("treasury", accounts.treasury), getAccountMeta("policy", accounts.policy), getAccountMeta("insured", accounts.insured), getAccountMeta("insuredUsdc", accounts.insuredUsdc), getAccountMeta("instructions", accounts.instructions), getAccountMeta("tokenProgram", accounts.tokenProgram)], data: getSettlePolicyInstructionDataEncoder().encode(args as SettlePolicyInstructionDataArgs), programAddress } as SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsured, InstructionAccountInputAddress<TAccountInsured>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>>);
 }
 
-export type SettlePolicyInput<TAccountCrank extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput, TAccountTreasury extends InstructionAccountInput = InstructionAccountInput, TAccountPolicy extends InstructionAccountInput = InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput = InstructionAccountInput, TAccountInstructions extends InstructionAccountInput = InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput> =  {
+export type SettlePolicyInput<TAccountCrank extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput, TAccountTreasury extends InstructionAccountInput = InstructionAccountInput, TAccountPolicy extends InstructionAccountInput = InstructionAccountInput, TAccountInsured extends InstructionAccountInput = InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput = InstructionAccountInput, TAccountInstructions extends InstructionAccountInput = InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput> =  {
   crank: TAccountCrank;
 config: TAccountConfig;
 usdcMint: TAccountUsdcMint;
 treasury: TAccountTreasury;
 policy: TAccountPolicy;
+/**
+ * The shipper's wallet: where the closed policy's rent goes. Pinned to the
+ * account the policy names, so the rent cannot be redirected.
+ */
+insured: TAccountInsured;
 insuredUsdc: TAccountInsuredUsdc;
 instructions?: TAccountInstructions;
 tokenProgram?: TAccountTokenProgram;
@@ -96,7 +118,7 @@ nonce: SettlePolicyInstructionDataArgs["nonce"];
 signature: SettlePolicyInstructionDataArgs["signature"];
 }
 
-export function getSettlePolicyInstruction<TAccountCrank extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput, TAccountTreasury extends InstructionAccountInput, TAccountPolicy extends InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput, TAccountInstructions extends InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof FREIGHT_DELAY_PROGRAM_ADDRESS>(input: SettlePolicyInput<TAccountCrank, TAccountConfig, TAccountUsdcMint, TAccountTreasury, TAccountPolicy, TAccountInsuredUsdc, TAccountInstructions, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>> {
+export function getSettlePolicyInstruction<TAccountCrank extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountUsdcMint extends InstructionAccountInput, TAccountTreasury extends InstructionAccountInput, TAccountPolicy extends InstructionAccountInput, TAccountInsured extends InstructionAccountInput, TAccountInsuredUsdc extends InstructionAccountInput, TAccountInstructions extends InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof FREIGHT_DELAY_PROGRAM_ADDRESS>(input: SettlePolicyInput<TAccountCrank, TAccountConfig, TAccountUsdcMint, TAccountTreasury, TAccountPolicy, TAccountInsured, TAccountInsuredUsdc, TAccountInstructions, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsured, InstructionAccountInputAddress<TAccountInsured>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>> {
   // Program address.
 const programAddress = config?.programAddress ?? FREIGHT_DELAY_PROGRAM_ADDRESS;
 
@@ -104,7 +126,7 @@ const programAddress = config?.programAddress ?? FREIGHT_DELAY_PROGRAM_ADDRESS;
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { crank: { value: input.crank ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isSigner: false, isWritable: false }, treasury: { value: input.treasury ?? null, isSigner: false, isWritable: true }, policy: { value: input.policy ?? null, isSigner: false, isWritable: true }, insuredUsdc: { value: input.insuredUsdc ?? null, isSigner: false, isWritable: true }, instructions: { value: input.instructions ?? null, isSigner: false, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { crank: { value: input.crank ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isSigner: false, isWritable: false }, treasury: { value: input.treasury ?? null, isSigner: false, isWritable: true }, policy: { value: input.policy ?? null, isSigner: false, isWritable: true }, insured: { value: input.insured ?? null, isSigner: false, isWritable: true }, insuredUsdc: { value: input.insuredUsdc ?? null, isSigner: false, isWritable: true }, instructions: { value: input.instructions ?? null, isSigner: false, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isSigner: false, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -120,7 +142,7 @@ if (!accounts.tokenProgram.value) {
 accounts.tokenProgram.value = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
 }
 
-return Object.freeze({ accounts: [getAccountMeta("crank", accounts.crank), getAccountMeta("config", accounts.config), getAccountMeta("usdcMint", accounts.usdcMint), getAccountMeta("treasury", accounts.treasury), getAccountMeta("policy", accounts.policy), getAccountMeta("insuredUsdc", accounts.insuredUsdc), getAccountMeta("instructions", accounts.instructions), getAccountMeta("tokenProgram", accounts.tokenProgram)], data: getSettlePolicyInstructionDataEncoder().encode(args as SettlePolicyInstructionDataArgs), programAddress } as SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>>);
+return Object.freeze({ accounts: [getAccountMeta("crank", accounts.crank), getAccountMeta("config", accounts.config), getAccountMeta("usdcMint", accounts.usdcMint), getAccountMeta("treasury", accounts.treasury), getAccountMeta("policy", accounts.policy), getAccountMeta("insured", accounts.insured), getAccountMeta("insuredUsdc", accounts.insuredUsdc), getAccountMeta("instructions", accounts.instructions), getAccountMeta("tokenProgram", accounts.tokenProgram)], data: getSettlePolicyInstructionDataEncoder().encode(args as SettlePolicyInstructionDataArgs), programAddress } as SettlePolicyInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountCrank, InstructionAccountInputAddress<TAccountCrank>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountPolicy, InstructionAccountInputAddress<TAccountPolicy>>, ResolvedInstructionAccountMeta<TAccountInsured, InstructionAccountInputAddress<TAccountInsured>>, ResolvedInstructionAccountMeta<TAccountInsuredUsdc, InstructionAccountInputAddress<TAccountInsuredUsdc>>, ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>>);
 }
 
 export type ParsedSettlePolicyInstruction<TProgram extends string = typeof FREIGHT_DELAY_PROGRAM_ADDRESS, TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[]> = { programAddress: Address<TProgram>;
@@ -130,15 +152,20 @@ config: TAccountMetas[1];
 usdcMint: TAccountMetas[2];
 treasury: TAccountMetas[3];
 policy: TAccountMetas[4];
-insuredUsdc: TAccountMetas[5];
-instructions: TAccountMetas[6];
-tokenProgram: TAccountMetas[7];
+/**
+ * The shipper's wallet: where the closed policy's rent goes. Pinned to the
+ * account the policy names, so the rent cannot be redirected.
+ */
+insured: TAccountMetas[5];
+insuredUsdc: TAccountMetas[6];
+instructions: TAccountMetas[7];
+tokenProgram: TAccountMetas[8];
 };
 data: SettlePolicyInstructionData; };
 
 export function parseSettlePolicyInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>): ParsedSettlePolicyInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 8) {
-  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 8 });
+  if (instruction.accounts.length < 9) {
+  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 9 });
 }
 let accountIndex = 0;
 const getNextAccount = () => {
@@ -146,5 +173,5 @@ const getNextAccount = () => {
   accountIndex += 1;
   return accountMeta;
 }
-  return { programAddress: instruction.programAddress, accounts: { crank: getNextAccount(), config: getNextAccount(), usdcMint: getNextAccount(), treasury: getNextAccount(), policy: getNextAccount(), insuredUsdc: getNextAccount(), instructions: getNextAccount(), tokenProgram: getNextAccount() }, data: getSettlePolicyInstructionDataDecoder().decode(instruction.data) };
+  return { programAddress: instruction.programAddress, accounts: { crank: getNextAccount(), config: getNextAccount(), usdcMint: getNextAccount(), treasury: getNextAccount(), policy: getNextAccount(), insured: getNextAccount(), insuredUsdc: getNextAccount(), instructions: getNextAccount(), tokenProgram: getNextAccount() }, data: getSettlePolicyInstructionDataDecoder().decode(instruction.data) };
 }

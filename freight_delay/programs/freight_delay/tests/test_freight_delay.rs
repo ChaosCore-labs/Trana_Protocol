@@ -73,6 +73,14 @@ fn policy_pda(config: &Pubkey, policy_id: u64) -> Pubkey {
     .0
 }
 
+fn registry_pda(config: &Pubkey, epoch: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"registry", config.as_ref(), &epoch.to_le_bytes()],
+        &freight_delay::id(),
+    )
+    .0
+}
+
 /// The SLA deadline the program compares a delivery against.
 fn deadline() -> i64 {
     BASE_TS + SLA_DELTA + GRACE
@@ -191,7 +199,11 @@ fn setup() -> Env {
 fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::InitializePool { fee_bps }.data(),
+        &instruction::InitializePool {
+            fee_bps,
+            keeper: env.admin.pubkey(),
+        }
+        .data(),
         accounts::InitializePool {
             admin: env.admin.pubkey(),
             usdc_mint: env.usdc_mint,
@@ -205,6 +217,21 @@ fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
     );
     // The attester's key is part of the config's address, so it signs too.
     send_signed(&mut env.svm, &[&env.admin, &env.oracle], &[ix])
+}
+
+fn post_root(env: &mut Env, epoch: u64, root: [u8; 32], count: u64) -> TransactionResult {
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::PostRoot { epoch, root, count }.data(),
+        accounts::PostRoot {
+            keeper: env.admin.pubkey(),
+            config: env.config,
+            registry: registry_pda(&env.config, epoch),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &env.admin, &[ix])
 }
 
 fn deposit_capital(env: &mut Env, amount: u64) -> TransactionResult {
@@ -300,6 +327,7 @@ fn signed_attestation(
             usdc_mint: env.usdc_mint,
             treasury: env.treasury,
             policy: policy_pda(&env.config, 1),
+            insured: env.shipper.pubkey(),
             insured_usdc: env.shipper_usdc,
             instructions: solana_instructions_sysvar::ID,
             token_program: TOKEN_ID,
@@ -352,6 +380,7 @@ fn initialize_pool_sets_state() {
     let config = read_config(&env.svm, &env.config);
     assert_eq!(config.admin, env.admin.pubkey());
     assert_eq!(config.oracle_authority, env.oracle.pubkey());
+    assert_eq!(config.keeper, env.admin.pubkey());
     assert_eq!(config.usdc_mint, env.usdc_mint);
     assert_eq!(config.treasury, env.treasury);
     assert_eq!(config.fee_bps, FEE_BPS);
@@ -367,6 +396,7 @@ fn initialize_pool_sets_state() {
     let event: events::PoolInitialized = parse_event(&res);
     assert_eq!(event.config, env.config);
     assert_eq!(event.oracle_authority, env.oracle.pubkey());
+    assert_eq!(event.keeper, env.admin.pubkey());
     assert_eq!(event.fee_bps, FEE_BPS);
 }
 
@@ -411,12 +441,94 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
 
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::InitializePool { fee_bps: FEE_BPS }.data(),
+        &instruction::InitializePool {
+            fee_bps: FEE_BPS,
+            keeper: env.admin.pubkey(),
+        }
+        .data(),
         metas,
     );
 
     assert!(send(&mut env.svm, &squatter, &[ix]).is_err());
     assert!(env.svm.get_account(&env.config).is_none());
+}
+
+#[test]
+fn buy_policy_requires_a_strictly_increasing_policy_id() {
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(buy_policy(&mut env, 5, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+    // 4's PDA is free, but the id is spent: ids only ever go up.
+    assert!(buy_policy(&mut env, 4, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_err());
+    assert!(buy_policy(&mut env, 5, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_err());
+    assert!(buy_policy(&mut env, 6, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+    assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 6);
+}
+
+#[test]
+fn buy_policy_rejects_reusing_a_closed_policy_id() {
+    // `nonce` is the policy id, so a reused id would let a stale attestation
+    // settle a policy it was not signed for. Closing the PDA frees the address;
+    // the monotonic guard is what keeps the id spent (CHA-18).
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+
+    set_ts(&mut env.svm, deadline() + 1);
+    assert!(settle_policy(&mut env, 1, deadline() - 100).is_ok());
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "the closed policy's address is free again"
+    );
+
+    let later = deadline() + 10_000;
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, later).is_err(),
+        "a closed id cannot be bought back"
+    );
+    assert!(buy_policy(&mut env, 2, 500_000 * UNIT, 50_000 * UNIT, later).is_ok());
+}
+
+#[test]
+fn post_root_stores_the_batch_root() {
+    let mut env = funded_pool(1_000 * UNIT);
+    let root = [7u8; 32];
+    let res = post_root(&mut env, 1, root, 42);
+    assert!(res.is_ok());
+
+    let raw = env.svm.get_account(&registry_pda(&env.config, 1)).unwrap();
+    let mut data: &[u8] = &raw.data;
+    let stored = freight_delay::state::Registry::try_deserialize(&mut data).unwrap();
+    assert_eq!(stored.epoch, 1);
+    assert_eq!(stored.root, root);
+    assert_eq!(stored.count, 42);
+
+    let event: events::RootPosted = parse_event(&res);
+    assert_eq!(event.config, env.config);
+    assert_eq!(event.root, root);
+    assert_eq!(event.count, 42);
+}
+
+#[test]
+fn post_root_rejects_a_stranger() {
+    let mut env = funded_pool(1_000 * UNIT);
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::PostRoot {
+            epoch: 1,
+            root: [7u8; 32],
+            count: 1,
+        }
+        .data(),
+        accounts::PostRoot {
+            keeper: env.lp.pubkey(),
+            config: env.config,
+            registry: registry_pda(&env.config, 1),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    // `env.lp` is not the configured keeper.
+    assert!(send(&mut env.svm, &env.lp, &[ix]).is_err());
+    assert!(env.svm.get_account(&registry_pda(&env.config, 1)).is_none());
 }
 
 #[test]
@@ -547,6 +659,7 @@ fn settle_pays_shipper_on_late_delivery() {
     let late = deadline() + 100;
 
     let shipper_before = balance(&env.svm, &env.shipper_usdc);
+    let shipper_sol_before = env.svm.get_account(&env.shipper.pubkey()).unwrap().lamports;
     set_ts(&mut env.svm, deadline() + 1);
 
     let res = settle_policy(&mut env, 1, late);
@@ -566,14 +679,28 @@ fn settle_pays_shipper_on_late_delivery() {
         shipper_before + payout
     );
 
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-    assert!(policy.is_settled);
-    assert!(policy.is_paid);
+    // The policy PDA is closed on settlement; `PolicyClosed` is the record and
+    // the rent comes home to the shipper.
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "a settled policy is closed"
+    );
+    assert!(
+        env.svm.get_account(&env.shipper.pubkey()).unwrap().lamports > shipper_sol_before,
+        "the policy rent returns to the shipper"
+    );
 
     let event: events::PolicySettled = parse_event(&res);
     assert!(event.triggered);
     assert_eq!(event.payout_amount, payout);
     assert_eq!(event.actual_delivery, late);
+
+    let closed: events::PolicyClosed = parse_event(&res);
+    assert_eq!(closed.policy, policy_pda(&env.config, 1));
+    assert_eq!(closed.shipper, env.shipper.pubkey());
+    assert_eq!(closed.outcome, events::PolicyOutcome::PaidLate);
+    assert_eq!(closed.payout_amount, payout);
+    assert_eq!(closed.premium, premium);
 }
 
 #[test]
@@ -598,12 +725,16 @@ fn settle_releases_risk_when_within_grace() {
     assert_eq!(config.total_capital, capital + premium - fee);
     assert_eq!(balance(&env.svm, &env.shipper_usdc), shipper_before);
 
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-    assert!(policy.is_settled);
-    assert!(!policy.is_paid);
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "an on-time settle closes the policy too"
+    );
 
     let event: events::PolicySettled = parse_event(&res);
     assert!(!event.triggered);
+
+    let closed: events::PolicyClosed = parse_event(&res);
+    assert_eq!(closed.outcome, events::PolicyOutcome::ClosedOnTime);
 }
 
 #[test]
@@ -662,6 +793,36 @@ fn withdraw_capital_returns_usdc_and_burns_shares() {
     let event: events::CapitalWithdrawn = parse_event(&res);
     assert_eq!(event.shares_burned, shares);
     assert_eq!(event.amount, shares);
+}
+
+#[test]
+fn withdraw_capital_closes_a_position_that_reaches_zero_shares() {
+    // A position is only worth its rent while it has shares: redeeming the last
+    // one closes the account and returns the rent to the LP (CHA-18).
+    let capital = 1_000_000 * UNIT;
+    let mut env = funded_pool(capital);
+    let position = lp_position_pda(&env.config, &env.lp.pubkey());
+
+    // A partial withdrawal leaves the position open.
+    assert!(withdraw_capital(&mut env, 400_000 * UNIT).is_ok());
+    assert!(
+        env.svm.get_account(&position).is_some(),
+        "a position with shares left must stay open"
+    );
+
+    // Burning the last share closes it. The rent (over a million lamports for 49
+    // bytes) dwarfs the 5000-lamport fee, so the LP's balance still rises.
+    let lp_before = env.svm.get_account(&env.lp.pubkey()).unwrap().lamports;
+    assert!(withdraw_capital(&mut env, 600_000 * UNIT).is_ok());
+    assert!(
+        env.svm.get_account(&position).is_none(),
+        "a zero-share position must be closed"
+    );
+    assert!(env.svm.get_account(&env.lp.pubkey()).unwrap().lamports > lp_before);
+
+    // The same LP can deposit again: `init_if_needed` recreates the account.
+    assert!(deposit_capital(&mut env, 100_000 * UNIT).is_ok());
+    assert!(env.svm.get_account(&position).is_some());
 }
 
 #[test]
@@ -848,10 +1009,10 @@ fn settle_releases_locked_risk_without_any_timeout_path() {
     );
 
     let after = read_config(&env.svm, &env.config);
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-
-    assert!(policy.is_settled, "settled");
-    assert!(!policy.is_paid, "the arrival was within grace, so no payout");
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "the settled policy is closed"
+    );
     assert_eq!(
         after.total_locked_risk,
         before.total_locked_risk - 500_000 * UNIT,

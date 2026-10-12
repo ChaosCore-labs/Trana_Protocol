@@ -4,7 +4,7 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::{
     constants::*,
     error::FreightDelayError,
-    events::{DeliveryAttested, PolicySettled},
+    events::{DeliveryAttested, PolicyClosed, PolicyOutcome, PolicySettled},
     instructions::shared::{self, DeliveryAttestation, verify_ed25519_attestation},
     state::{Policy, PoolConfig},
 };
@@ -37,6 +37,13 @@ pub struct SettlePolicy<'info> {
         bump = policy.bump,
     )]
     pub policy: Account<'info, Policy>,
+    /// The shipper's wallet: where the closed policy's rent goes. Pinned to the
+    /// account the policy names, so the rent cannot be redirected.
+    #[account(
+        mut,
+        constraint = insured.key() == policy.insured @ FreightDelayError::Unauthorized,
+    )]
+    pub insured: SystemAccount<'info>,
     #[account(
         mut,
         associated_token::mint = usdc_mint,
@@ -106,6 +113,7 @@ impl<'info> SettlePolicy<'info> {
 
             shared::transfer_from_treasury(
                 &self.token_program,
+                &self.usdc_mint,
                 &self.treasury,
                 &self.insured_usdc,
                 &self.config,
@@ -139,6 +147,31 @@ impl<'info> SettlePolicy<'info> {
             expected_delivery: self.policy.expected_delivery,
             grace_period: self.policy.grace_period,
         });
+
+        let clock = Clock::get()?;
+        emit!(PolicyClosed {
+            config: self.config.key(),
+            policy: self.policy.key(),
+            shipper: self.policy.insured,
+            beneficiary: self.policy.insured,
+            shipment_id: self.policy.shipment_id,
+            expected_delivery: self.policy.expected_delivery,
+            grace_period: self.policy.grace_period,
+            payout_amount: payout,
+            premium: self.policy.premium_amount,
+            outcome: if triggered {
+                PolicyOutcome::PaidLate
+            } else {
+                PolicyOutcome::ClosedOnTime
+            },
+            decided_at: clock.unix_timestamp,
+            decided_at_slot: clock.slot,
+        });
+
+        // The policy is done: close the PDA and return the rent to the shipper.
+        // `PolicyClosed` above is the durable record; the account was only ever
+        // live state (CHA-18).
+        self.policy.close(self.insured.to_account_info())?;
 
         Ok(())
     }

@@ -6,7 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU16Decoder, getU16Encoder, SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, SolanaError, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlySignerAccount, type ReadonlyUint8Array, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
+import { combineCodec, fixDecoderSize, fixEncoderSize, getAddressDecoder, getAddressEncoder, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU16Decoder, getU16Encoder, SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, SolanaError, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlySignerAccount, type ReadonlyUint8Array, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { getAccountMetaFactory, getAddressFromResolvedInstructionAccount, type InstructionAccountInput, type InstructionAccountInputAddress, type InstructionSignerInput, type ResolvedInstructionAccount, type ResolvedInstructionAccountMeta } from '@solana/program-client-core';
 import { findConfigPda, findTreasuryPda } from '../pdas/index.ts';
 import { FREIGHT_DELAY_PROGRAM_ADDRESS } from '../programs/index.ts';
@@ -18,16 +18,16 @@ export function getInitializePoolDiscriminatorBytes(): ReadonlyUint8Array { retu
 export type InitializePoolInstruction<TProgram extends string = typeof FREIGHT_DELAY_PROGRAM_ADDRESS, TAccountAdmin extends string | AccountMeta<string> = string, TAccountUsdcMint extends string | AccountMeta<string> = string, TAccountOracleAuthority extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountTreasury extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAdmin extends string ? WritableSignerAccount<TAccountAdmin> & AccountSignerMeta<TAccountAdmin> : TAccountAdmin, TAccountUsdcMint extends string ? ReadonlyAccount<TAccountUsdcMint> : TAccountUsdcMint, TAccountOracleAuthority extends string ? ReadonlySignerAccount<TAccountOracleAuthority> & AccountSignerMeta<TAccountOracleAuthority> : TAccountOracleAuthority, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountTreasury extends string ? WritableAccount<TAccountTreasury> : TAccountTreasury, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
-export type InitializePoolInstructionData = { discriminator: ReadonlyUint8Array; feeBps: number;  };
+export type InitializePoolInstructionData = { discriminator: ReadonlyUint8Array; feeBps: number; keeper: Address;  };
 
-export type InitializePoolInstructionDataArgs = { feeBps: number;  };
+export type InitializePoolInstructionDataArgs = { feeBps: number; keeper: Address;  };
 
 export function getInitializePoolInstructionDataEncoder(): FixedSizeEncoder<InitializePoolInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['feeBps', getU16Encoder()]]), (value) => ({ ...value, discriminator: INITIALIZE_POOL_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['feeBps', getU16Encoder()], ['keeper', getAddressEncoder()]]), (value) => ({ ...value, discriminator: INITIALIZE_POOL_DISCRIMINATOR }));
 }
 
 export function getInitializePoolInstructionDataDecoder(): FixedSizeDecoder<InitializePoolInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['feeBps', getU16Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['feeBps', getU16Decoder()], ['keeper', getAddressDecoder()]]);
 }
 
 export function getInitializePoolInstructionDataCodec(): FixedSizeCodec<InitializePoolInstructionDataArgs, InitializePoolInstructionData> {
@@ -48,6 +48,7 @@ treasury?: TAccountTreasury;
 tokenProgram?: TAccountTokenProgram;
 systemProgram?: TAccountSystemProgram;
 feeBps: InitializePoolInstructionDataArgs["feeBps"];
+keeper: InitializePoolInstructionDataArgs["keeper"];
 }
 
 export async function getInitializePoolInstructionAsync<TAccountAdmin extends InstructionSignerInput, TAccountUsdcMint extends InstructionAccountInput, TAccountOracleAuthority extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountTreasury extends InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof FREIGHT_DELAY_PROGRAM_ADDRESS>(input: InitializePoolAsyncInput<TAccountAdmin, TAccountUsdcMint, TAccountOracleAuthority, TAccountConfig, TAccountTreasury, TAccountTokenProgram, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): Promise<InitializePoolInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountOracleAuthority, InstructionAccountInputAddress<TAccountOracleAuthority>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>> {
@@ -97,6 +98,7 @@ treasury: TAccountTreasury;
 tokenProgram?: TAccountTokenProgram;
 systemProgram?: TAccountSystemProgram;
 feeBps: InitializePoolInstructionDataArgs["feeBps"];
+keeper: InitializePoolInstructionDataArgs["keeper"];
 }
 
 export function getInitializePoolInstruction<TAccountAdmin extends InstructionSignerInput, TAccountUsdcMint extends InstructionAccountInput, TAccountOracleAuthority extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountTreasury extends InstructionAccountInput, TAccountTokenProgram extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof FREIGHT_DELAY_PROGRAM_ADDRESS>(input: InitializePoolInput<TAccountAdmin, TAccountUsdcMint, TAccountOracleAuthority, TAccountConfig, TAccountTreasury, TAccountTokenProgram, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): InitializePoolInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountUsdcMint, InstructionAccountInputAddress<TAccountUsdcMint>>, ResolvedInstructionAccountMeta<TAccountOracleAuthority, InstructionAccountInputAddress<TAccountOracleAuthority>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountTreasury, InstructionAccountInputAddress<TAccountTreasury>>, ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>> {

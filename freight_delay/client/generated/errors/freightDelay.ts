@@ -15,7 +15,7 @@ export const FREIGHT_DELAY_ERROR__UNAUTHORIZED = 0x1770; // 6000
 export const FREIGHT_DELAY_ERROR__INVALID_FEE = 0x1771; // 6001
 /** InvalidAmount: Amount must be greater than zero. */
 export const FREIGHT_DELAY_ERROR__INVALID_AMOUNT = 0x1772; // 6002
-/** InvalidDeadline: Expected delivery must be in the future with a non-negative grace period. */
+/** InvalidDeadline: Expected delivery must be in the future and grace period non-negative, with a representable deadline. */
 export const FREIGHT_DELAY_ERROR__INVALID_DEADLINE = 0x1773; // 6003
 /** Insolvent: Pool is insolvent: locked risk would exceed total capital. */
 export const FREIGHT_DELAY_ERROR__INSOLVENT = 0x1774; // 6004
@@ -33,12 +33,14 @@ export const FREIGHT_DELAY_ERROR__INSUFFICIENT_SHARES = 0x1779; // 6009
 export const FREIGHT_DELAY_ERROR__MATH_OVERFLOW = 0x177a; // 6010
 /** AttestationRejected: Delivery attestation signature is missing or invalid. */
 export const FREIGHT_DELAY_ERROR__ATTESTATION_REJECTED = 0x177b; // 6011
+/** InvalidPolicyId: Policy id must be greater than the last one issued for this pool. */
+export const FREIGHT_DELAY_ERROR__INVALID_POLICY_ID = 0x177c; // 6012
 
-export type FreightDelayError = typeof FREIGHT_DELAY_ERROR__ATTESTATION_REJECTED | typeof FREIGHT_DELAY_ERROR__DELIVERY_MISMATCH | typeof FREIGHT_DELAY_ERROR__INSOLVENT | typeof FREIGHT_DELAY_ERROR__INSUFFICIENT_FREE_CAPITAL | typeof FREIGHT_DELAY_ERROR__INSUFFICIENT_SHARES | typeof FREIGHT_DELAY_ERROR__INVALID_AMOUNT | typeof FREIGHT_DELAY_ERROR__INVALID_DEADLINE | typeof FREIGHT_DELAY_ERROR__INVALID_FEE | typeof FREIGHT_DELAY_ERROR__MATH_OVERFLOW | typeof FREIGHT_DELAY_ERROR__POLICY_ALREADY_SETTLED | typeof FREIGHT_DELAY_ERROR__POLICY_NOT_MATURE | typeof FREIGHT_DELAY_ERROR__UNAUTHORIZED;
+export type FreightDelayError = typeof FREIGHT_DELAY_ERROR__ATTESTATION_REJECTED | typeof FREIGHT_DELAY_ERROR__DELIVERY_MISMATCH | typeof FREIGHT_DELAY_ERROR__INSOLVENT | typeof FREIGHT_DELAY_ERROR__INSUFFICIENT_FREE_CAPITAL | typeof FREIGHT_DELAY_ERROR__INSUFFICIENT_SHARES | typeof FREIGHT_DELAY_ERROR__INVALID_AMOUNT | typeof FREIGHT_DELAY_ERROR__INVALID_DEADLINE | typeof FREIGHT_DELAY_ERROR__INVALID_FEE | typeof FREIGHT_DELAY_ERROR__INVALID_POLICY_ID | typeof FREIGHT_DELAY_ERROR__MATH_OVERFLOW | typeof FREIGHT_DELAY_ERROR__POLICY_ALREADY_SETTLED | typeof FREIGHT_DELAY_ERROR__POLICY_NOT_MATURE | typeof FREIGHT_DELAY_ERROR__UNAUTHORIZED;
 
 let freightDelayErrorMessages: Record<FreightDelayError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
-  freightDelayErrorMessages = { [FREIGHT_DELAY_ERROR__ATTESTATION_REJECTED]: `Delivery attestation signature is missing or invalid.`, [FREIGHT_DELAY_ERROR__DELIVERY_MISMATCH]: `Delivery report does not match the policy shipment.`, [FREIGHT_DELAY_ERROR__INSOLVENT]: `Pool is insolvent: locked risk would exceed total capital.`, [FREIGHT_DELAY_ERROR__INSUFFICIENT_FREE_CAPITAL]: `Pool does not have enough unencumbered capital for this withdrawal.`, [FREIGHT_DELAY_ERROR__INSUFFICIENT_SHARES]: `Not enough shares to redeem.`, [FREIGHT_DELAY_ERROR__INVALID_AMOUNT]: `Amount must be greater than zero.`, [FREIGHT_DELAY_ERROR__INVALID_DEADLINE]: `Expected delivery must be in the future with a non-negative grace period.`, [FREIGHT_DELAY_ERROR__INVALID_FEE]: `Fee must be below 10,000 basis points.`, [FREIGHT_DELAY_ERROR__MATH_OVERFLOW]: `Arithmetic overflow.`, [FREIGHT_DELAY_ERROR__POLICY_ALREADY_SETTLED]: `Policy has already been settled.`, [FREIGHT_DELAY_ERROR__POLICY_NOT_MATURE]: `Policy has not reached its delivery deadline plus grace period.`, [FREIGHT_DELAY_ERROR__UNAUTHORIZED]: `Only the configured authority may perform this action.` };
+  freightDelayErrorMessages = { [FREIGHT_DELAY_ERROR__ATTESTATION_REJECTED]: `Delivery attestation signature is missing or invalid.`, [FREIGHT_DELAY_ERROR__DELIVERY_MISMATCH]: `Delivery report does not match the policy shipment.`, [FREIGHT_DELAY_ERROR__INSOLVENT]: `Pool is insolvent: locked risk would exceed total capital.`, [FREIGHT_DELAY_ERROR__INSUFFICIENT_FREE_CAPITAL]: `Pool does not have enough unencumbered capital for this withdrawal.`, [FREIGHT_DELAY_ERROR__INSUFFICIENT_SHARES]: `Not enough shares to redeem.`, [FREIGHT_DELAY_ERROR__INVALID_AMOUNT]: `Amount must be greater than zero.`, [FREIGHT_DELAY_ERROR__INVALID_DEADLINE]: `Expected delivery must be in the future and grace period non-negative, with a representable deadline.`, [FREIGHT_DELAY_ERROR__INVALID_FEE]: `Fee must be below 10,000 basis points.`, [FREIGHT_DELAY_ERROR__INVALID_POLICY_ID]: `Policy id must be greater than the last one issued for this pool.`, [FREIGHT_DELAY_ERROR__MATH_OVERFLOW]: `Arithmetic overflow.`, [FREIGHT_DELAY_ERROR__POLICY_ALREADY_SETTLED]: `Policy has already been settled.`, [FREIGHT_DELAY_ERROR__POLICY_NOT_MATURE]: `Policy has not reached its delivery deadline plus grace period.`, [FREIGHT_DELAY_ERROR__UNAUTHORIZED]: `Only the configured authority may perform this action.` };
 }
 
 export function getFreightDelayErrorMessage(code: FreightDelayError): string {

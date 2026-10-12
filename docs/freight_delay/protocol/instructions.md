@@ -1,6 +1,6 @@
 # Instructions
 
-Five instructions. `lib.rs` contains no logic — each `#[program]` function
+Six instructions. `lib.rs` contains no logic — each `#[program]` function
 forwards its arguments and `ctx.bumps` into the handler in the instruction's own
 module, where the guards and arithmetic live.
 
@@ -10,10 +10,11 @@ module, where the guards and arithmetic live.
 |---|---|---|---|
 | `initialize_pool` | admin + attester | `fee_bps < 10_000`; the attester must sign | `PoolInitialized` |
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
-| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `free_capital >= payout` | `PolicyPurchased` |
+| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `policy_id > config.last_policy_id`; `free_capital >= payout` | `PolicyPurchased` |
 
-| `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled` |
+| `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled`, `PolicyClosed` |
 | `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital` | `CapitalWithdrawn` |
+| `post_root` | keeper | `keeper == config.keeper`; the `epoch` PDA must be unposted (`init`) | `RootPosted` |
 
 Beyond these, the `#[derive(Accounts)]` structs carry constraints that are just
 as load-bearing: `associated_token::authority` on every user token account,
@@ -89,7 +90,7 @@ pub fn buy_policy(
 
 - **Guards, in order:** `payout_amount != 0`; `premium_amount != 0`;
   `expected_delivery > Clock::unix_timestamp`; `grace_period >= 0`; then
-  `free_capital() >= payout_amount`.
+  `policy_id > config.last_policy_id`; then `free_capital() >= payout_amount`.
 - **Fee split:** `fee = premium * fee_bps / 10_000` (floored),
   `net_premium = premium - fee`.
 - **Effect:** `total_capital += net_premium`, `total_fees += fee`,
@@ -111,6 +112,12 @@ Nothing validates that the quoted `expected_delivery` is realistic, or that
 `grace_period` is a sane amount of slack. A policy written with a deadline in
 2030 simply locks its payout until 2030.
 
+`policy_id` is a nonce, not a label: the attester signs it, and `settle_policy`
+requires `nonce == policy_id`. Ids therefore strictly increase per pool and are
+never reused — even after the policy's PDA is closed and its address is free
+(CHA-18). Reusing one would let a signature minted for the old policy settle the
+new one on the same shipment.
+
 ## `settle_policy`
 
 Pays the shipper on a late arrival, or releases the risk. Permissionless.
@@ -128,6 +135,9 @@ supplies the attested shipment and its ed25519 signature, and must also include
 the ed25519 precompile instruction that carries that signature, earlier in the
 same transaction.
 
+- **Accounts:** the policy PDA, the pool's treasury and the shipper's ATA — plus
+  the shipper's own wallet as `insured`, pinned to `policy.insured` because the
+  closed policy's rent is paid to it.
 - **Guards, in order:** `!policy.is_settled`;
   `Clock::unix_timestamp >= policy.expected_delivery + policy.grace_period`;
   `attestation.shipment_id == policy.shipment_id`;
@@ -135,17 +145,24 @@ same transaction.
   instruction sysvar must contain an ed25519 precompile entry over
   `attestation.to_message(&config.key())`, the 64-byte message bound to *this*
   pool, signed by `config.oracle_authority`.
-- **Trigger:** `attestation.actual_delivery > expected_delivery + grace_period`.
+- **Trigger:** `attestation.actual_delivery > expected_delivery + grace_period`,
+  where `actual_delivery` is the attested **destination-terminal arrival**
+  (`vessel_arrived` / discharged / gate-out), not door delivery. The SLA is
+  terminal-to-terminal and the program never infers last-mile.
 - **Effect, always:** `total_locked_risk -= payout_amount`, `policy.is_settled = true`.
 - **Effect, on trigger:** `total_capital -= payout_amount`,
   `policy.is_paid = true`, and `transfer_from_treasury(payout)` to the shipper's ATA.
-- **Ends with:** `assert_solvent()`.
+- **Ends with:** `assert_solvent()`, then the policy PDA is **closed** and its rent
+  returns to the shipper.
 - **Event:** `PolicySettled { config, policy, insured, triggered, payout_amount, actual_delivery, expected_delivery, grace_period }`
+- **Event:** `PolicyClosed { config, policy, shipper, beneficiary, shipment_id, expected_delivery, grace_period, payout_amount, premium, outcome, decided_at, decided_at_slot }` — the terminal record, emitted immediately before the close.
 
 Notes that are easy to get wrong:
 
 The signed message is 64 bytes: the pool's address, then `shipment_id`,
-`actual_delivery`, `terminal_code` and `nonce`. Two bindings come out of it, and
+`actual_delivery`, `terminal_code` and `nonce`. `actual_delivery` is the
+**destination-terminal arrival** timestamp in unix seconds, and `terminal_code`
+names the terminal it was measured at. Two bindings come out of it, and
 they stop different attacks.
 
 The pool prefix stops **cross-pool** replay. Without it a signature travels
@@ -155,8 +172,8 @@ signature would settle a policy the attester never saw.
 
 The `nonce` is the **within-pool** defence. It is part of the signed message, and
 the handler requires `nonce == policy.policy_id`, so a signature can only ever
-settle the policy it was minted for; `is_settled` then blocks settling that
-policy a second time.
+settle the policy it was minted for; `is_settled` blocks a second settlement, and
+the PDA is closed after the first, so a replay cannot even load the account.
 
 The signature check is a *scan*, not a cryptographic call. It reads the
 instruction sysvar, walks the instructions before `settle_policy`, and accepts
@@ -174,9 +191,10 @@ Replay within a pool is stopped by the `nonce`, and replay across pools by the
 pool prefix — see above. What the scan adds is *relevance*: the signature must
 have been checked by the precompile in this very transaction.
 
-Given an attested arrival, the risk is released on **both** branches. A
-non-triggered settle leaves `is_settled = true, is_paid = false` and returns the
-capital to free capacity.
+Given an attested arrival, the risk is released on **both** branches, and either
+branch closes the policy PDA: `PolicyClosed.outcome` is `PaidLate` or
+`ClosedOnTime`. A non-triggered settle transfers nothing and returns the capital
+to free capacity.
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.
@@ -213,6 +231,24 @@ if they somehow presented the right PDA.
 There is no cooldown, no unbonding queue, and no withdrawal cap other than free
 capital. Withdrawal is immediate and unconditional once the pool has
 unencumbered capital.
+
+## `post_root`
+
+Posts one history-batch root. Keeper-signed; one `Registry` PDA per epoch.
+
+```rust
+pub fn post_root(ctx: Context<PostRoot>, epoch: u64, root: [u8; 32], count: u64) -> Result<()>
+```
+
+- **Guards:** `keeper == config.keeper`; the `[b"registry", config, epoch]` PDA must
+  be unposted (`init`).
+- **Effect:** writes `Registry { epoch, root, count }`.
+- **Event:** `RootPosted { config, epoch, root, count }`
+
+The program does not verify the Merkle root — it cannot, on chain. It authenticates
+the poster and stores the root; anyone holding the batch data checks inclusion
+against it. A withheld batch is undetectable, which is the residual trust the
+design accepts (see [Invariants](/freight_delay/protocol/invariants)).
 
 ## Related
 

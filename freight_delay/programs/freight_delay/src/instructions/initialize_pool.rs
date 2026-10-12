@@ -34,7 +34,12 @@ pub struct InitializePool<'info> {
 }
 
 impl<'info> InitializePool<'info> {
-    pub fn initialize_pool(&mut self, fee_bps: u16, bumps: InitializePoolBumps) -> Result<()> {
+    pub fn initialize_pool(
+        &mut self,
+        fee_bps: u16,
+        keeper: Pubkey,
+        bumps: InitializePoolBumps,
+    ) -> Result<()> {
         // Below the denominator, not at it: a 100% fee floors `net_premium` to
         // zero, and a pool whose capital can reach zero can never be deposited
         // into again — share pricing divides by it.
@@ -46,12 +51,14 @@ impl<'info> InitializePool<'info> {
         self.config.set_inner(PoolConfig {
             admin: self.admin.key(),
             oracle_authority: self.oracle_authority.key(),
+            keeper,
             usdc_mint: self.usdc_mint.key(),
             treasury: self.treasury.key(),
             total_capital: 0,
             total_locked_risk: 0,
             total_shares: 0,
             total_fees: 0,
+            last_policy_id: 0,
             fee_bps,
             bump: bumps.config,
         });
@@ -62,6 +69,7 @@ impl<'info> InitializePool<'info> {
             treasury: self.treasury.key(),
             admin: self.admin.key(),
             oracle_authority: self.oracle_authority.key(),
+            keeper,
             fee_bps,
         });
 

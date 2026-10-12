@@ -1,6 +1,6 @@
 # Accounts & State
 
-Three account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
+Four account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
 one is allocated as `8 + X::INIT_SPACE`, where the leading 8 bytes are Anchor's
 discriminator.
 
@@ -24,15 +24,17 @@ cannot be created — or squatted — by anyone else.
 |---|---|---|---|
 | `admin` | `Pubkey` | 32 | Recorded at init; **never read by any handler** |
 | `oracle_authority` | `Pubkey` | 32 | The attester's raw 32-byte ed25519 public key; the only key whose signature settles a policy |
+| `keeper` | `Pubkey` | 32 | The only key that may `post_root`; immutable after init |
 | `usdc_mint` | `Pubkey` | 32 | The pool's mint; also a seed component |
 | `treasury` | `Pubkey` | 32 | The program-owned token account |
 | `total_capital` | `u64` | 8 | Deposits plus net premiums minus realised payouts |
 | `total_locked_risk` | `u64` | 8 | Sum of `payout_amount` over unsettled policies |
 | `total_shares` | `u64` | 8 | Sum of all LP shares |
 | `total_fees` | `u64` | 8 | Protocol fees accrued; **never decremented** |
+| `last_policy_id` | `u64` | 8 | Highest id issued; ids strictly increase and are never reused |
 | `fee_bps` | `u16` | 2 | Premium fee in basis points, immutable after init |
 | `bump` | `u8` | 1 | PDA bump |
-| | | **163** | `space = 8 + 163 = 171` |
+| | | **203** | `space = 8 + 203 = 211` |
 
 Two methods live on this struct:
 
@@ -60,6 +62,24 @@ risk — `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital` �
 making full collateralisation a per-instruction re-check rather than a single
 entry gate. `initialize_pool` is the exception: it creates the pool at zero risk.
 
+## `Registry` — a posted history-batch root
+
+Seeds `[b"registry", config, epoch_le]`. One PDA per epoch, written once by the
+keeper (`post_root`), so each batch's root is as permanent as any other account.
+
+| Field | Type | Bytes | Meaning |
+|---|---|---|---|
+| `epoch` | `u64` | 8 | Batch number, part of the seeds |
+| `root` | `[u8; 32]` | 32 | Merkle root over the batch's `PolicyClosed` leaves |
+| `count` | `u64` | 8 | Leaves the root covers |
+| | | **48** | `space = 8 + 48 = 56` |
+
+The program cannot verify a Merkle root on chain, so it does not try: it
+authenticates the poster against `PoolConfig.keeper` and stores the root. Anyone
+holding the batch data can verify a policy's inclusion, so a forged record is
+detectable; a withheld batch is not. The chain's `PolicyClosed` events remain the
+availability backstop, so the off-chain database is rebuildable without the keeper.
+
 ## `LpPosition` — a share balance
 
 Seeds `[b"lp_position", config, lp]`. The seed set means one LP has one position
@@ -81,9 +101,16 @@ pubkey cannot sign.
 
 ## `Policy` — one hedge's terms
 
-Seeds `[b"policy", config, policy_id_le]`. Note the little-endian encoding of
-`policy_id`; the ID is chosen by the buyer, so any caller can mint any
-unclaimed ID.
+Seeds `[b"policy", config, policy_id_le]`, with `policy_id` little-endian. The
+buyer picks the id, but it must be strictly greater than the pool's
+`last_policy_id` and is spent from then on: the attester's `nonce` is the policy
+id, so a reused id would let a stale attestation settle a policy it was not
+signed for (CHA-18).
+
+The account is **closed at settlement** (CHA-18): `settle_policy` emits
+`PolicyClosed` and sends the account's rent to the shipper. The chain events, not
+this account, are the permanent record — nothing else stores the policy's terms
+once the PDA is gone.
 
 | Field | Type | Bytes | Meaning |
 |---|---|---|---|
@@ -99,9 +126,11 @@ unclaimed ID.
 | `bump` | `u8` | 1 | PDA bump |
 | | | **83** | `space = 8 + 83 = 91` |
 
-`is_settled` and `is_paid` are not redundant. A policy that settles without a
-trigger ends with `is_settled = true, is_paid = false` — the risk was released
-without a transfer. `is_paid` is write-once-true and never reset.
+`is_settled` and `is_paid` are not redundant while the account is live. A policy
+that settles without a trigger ends with `is_settled = true, is_paid = false` —
+the risk was released without a transfer. Neither flag outlives settlement: the
+PDA is closed (CHA-18), so both are only ever read during the settling
+transaction.
 
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
 settlement time rather than stored. Neither term is validated for realism: any

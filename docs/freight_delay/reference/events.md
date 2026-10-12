@@ -1,7 +1,7 @@
 # Events
 
-Six events, all defined in `events.rs`. Four are emitted one per state-mutating
-instruction, `initialize_pool` has its own, and `settle_policy` emits two. Each
+Eight events, all defined in `events.rs`. One per state-mutating instruction,
+`initialize_pool` has its own, and `settle_policy` emits three. Each
 is emitted at the **end** of its handler — after state mutation and after
 `assert_solvent()` — so an emitted event is proof that the transaction succeeded
 and its effects are durable.
@@ -125,6 +125,49 @@ says what the oracle attested, `PolicySettled` says what the pool did about it.
 A client reconstructing cash flows must read `triggered` before treating
 `payout_amount` as a payment. This is the easiest way to misread the event
 stream.
+
+## `PolicyClosed`
+
+```rust
+pub struct PolicyClosed {
+    pub config: Pubkey,
+    pub policy: Pubkey,
+    pub shipper: Pubkey,
+    pub beneficiary: Pubkey,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium: u64,
+    pub outcome: PolicyOutcome,
+    pub decided_at: i64,
+    pub decided_at_slot: u64,
+}
+```
+
+The terminal event, emitted by `settle_policy` immediately before it closes the
+`Policy` PDA and returns the rent to the shipper (CHA-18). It carries the full
+terms, so a policy's lifecycle stays reconstructible once the account is gone:
+this record plus `DeliveryAttested` is the leaf format for the off-chain history
+batches, and the chain log remains the availability backstop.
+
+`outcome` is `PaidLate` or `ClosedOnTime`. There is no `PolicyVoided`: the program
+has no timeout path (CHA-15), so a policy cannot end any other way.
+
+## `RootPosted`
+
+```rust
+pub struct RootPosted {
+    pub config: Pubkey,
+    pub epoch: u64,
+    pub root: [u8; 32],
+    pub count: u64,
+}
+```
+
+Emitted by `post_root` when the keeper posts a history-batch root (CHA-18). The
+root is the integrity half of the archive; the `PolicyClosed` events are the
+availability half, and they stay in chain history permanently.
 
 ## `CapitalWithdrawn`
 

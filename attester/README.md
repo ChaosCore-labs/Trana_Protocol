@@ -22,9 +22,23 @@ on-chain* — so we run the publisher ourselves.
 | `src/simulated-source.ts` | `SimulatedSource`: scripted arrivals, the **required** demo backup. |
 | `src/signing.ts` | ed25519 keypair gen, sign, verify. |
 | `src/attest.ts` | Source-agnostic glue: fetch → payload → signature. |
+| `src/terminal49-source.ts` | `Terminal49Source`: the real carrier feed, polled over REST. |
 
-Terminal49Source (the real API) is **not built yet** — it lands behind the same
-`ArrivalSource` interface and changes nothing on-chain.
+**Scope: the arrival data is simulated.** The project ships `SimulatedSource`
+(scripted arrivals, through the identical sign-and-verify path) and nothing else
+is wired into the walkthrough or the crank.
+
+For real data, `src/terminal49-source.ts` is a ready adapter behind the same
+`ArrivalSource` interface: it polls `GET /v2/containers/{id}/transport_events`,
+reads `vessel_arrived` (falling back to `vessel_discharged`) and skips the
+`estimated.*` events. It is not part of the pilot, and Terminal49's free tier
+cannot run it — reads need a paid plan (only *creating* tracking requests is
+permitted; verified against a live key). Bringing the same data on chain through
+an oracle is the other documented path; either way the program only sees a signed
+payload, so nothing on chain changes.
+
+If you do point it at Terminal49, the key goes in `TERMINAL49_API_KEY` (copy
+`.env.example` to `.env` at the repo root; both are handled by `.gitignore`).
 
 ## Payload layout
 
@@ -44,8 +58,17 @@ different one. Any change here is a breaking change to the on-chain verify.
 
 ```bash
 bun install
-bun test          # 16 tests
+bun test          # 25 tests
 bun run typecheck
+bun run attest    # print a signed attestation for one arrival
+```
+
+`bun run attest` takes the pool and the attester seed as hex, the shipment and
+nonce as decimals, and the attested arrival as unix seconds:
+
+```bash
+bun run attest --pool-hex <64 hex chars> --seed-hex <64 hex chars> \
+  --shipment 27 --nonce 1 --arrival 1700000000 --terminal 4201 --json
 ```
 
 ## The simulated source is not a toy

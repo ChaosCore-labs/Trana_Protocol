@@ -14,10 +14,11 @@ sequenceDiagram
     participant Treasury as Treasury
     actor Attester as Attester (off chain)
     actor Crank
+    actor Keeper
 
     rect rgb(137, 180, 130, 0.12)
     Note over Admin, Treasury: Stage 1 — pool creation
-    Admin->>Program: initialize_pool(fee_bps) + attester signature
+    Admin->>Program: initialize_pool(fee_bps, keeper) + attester signature
     Program->>Treasury: init, authority = PoolConfig
     Program-->>Admin: PoolInitialized
     end
@@ -42,6 +43,7 @@ sequenceDiagram
     rect rgb(137, 180, 130, 0.12)
     Note over Attester: Stage 4 — arrival attestation (off chain)
     Attester->>Attester: sign (pool, shipment, arrival, terminal, nonce)
+    Note over Attester: arrival = destination-terminal arrival, not door delivery
     Note over Attester: no transaction, no account
     end
 
@@ -63,6 +65,8 @@ sequenceDiagram
     Program->>Program: mark settled
     Program-->>Crank: DeliveryAttested
     Program-->>Crank: PolicySettled
+    Program-->>Crank: PolicyClosed
+    Program->>Program: close the policy PDA, rent to the shipper
     end
 
     rect rgb(137, 180, 130, 0.12)
@@ -73,6 +77,13 @@ sequenceDiagram
     Program->>Treasury: transfer USDC
     Treasury-->>LP: USDC
     Program-->>LP: CapitalWithdrawn
+    end
+
+    rect rgb(137, 180, 130, 0.12)
+    Note over Keeper, Program: Stage 7 — history archive
+    Keeper->>Program: post_root(epoch, root, count)
+    Program->>Program: require keeper == config.keeper
+    Program-->>Keeper: RootPosted
     end
 ```
 
@@ -93,6 +104,12 @@ payout locked with no expiry, because the program has no timeout or refund path.
 Liveness here is a first-class concern rather than a formality; see
 [Invariants](/freight_delay/protocol/invariants) for why that missing timeout is a
 decision rather than an oversight.
+
+A cranker ships with the repo: `freight_delay/client/crank.ts` scans the pool's
+live policies, asks the attester's source for each arrival, and settles every
+matured one it can (CHA-19). It filters by re-deriving each policy's PDA, because
+the pool is not a field on the policy. The keypair it uses is unprivileged — the
+worst case if it leaks is that someone else pays fees.
 
 ## Pool state machine
 
@@ -126,7 +143,8 @@ stateDiagram-v2
     OnTime --> [*]
 ```
 
-`Late` and `OnTime` are both terminal, distinguished by the `is_paid` flag.
+`Late` and `OnTime` are both terminal, and both close the PDA: `PolicyClosed`
+records which outcome it was.
 
 `Placed` is the transient state. Both transitions out of it require a valid
 signed attestation, but every policy acquires one option to leave: once

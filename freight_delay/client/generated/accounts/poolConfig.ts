@@ -17,35 +17,59 @@ export type PoolConfig = { discriminator: ReadonlyUint8Array; admin: Address;
  * The attester's raw 32-byte ed25519 public key, not a wallet address.
  * `settle_policy` accepts only an attestation signed by this key.
  */
-oracleAuthority: Address; usdcMint: Address; 
+oracleAuthority: Address; 
+/**
+ * The only key allowed to post history-batch roots (CHA-18). Set at init and
+ * never changeable, like every other authority in this pool.
+ */
+keeper: Address; usdcMint: Address; 
 /** Program-owned token account that holds all pool liquidity. */
 treasury: Address; 
 /** Deposited capital plus net premiums, minus realised payouts. */
 totalCapital: bigint; 
 /** Sum of `payout_amount` across unsettled policies. */
-totalLockedRisk: bigint; totalShares: bigint; totalFees: bigint; feeBps: number; bump: number;  };
+totalLockedRisk: bigint; totalShares: bigint; totalFees: bigint; 
+/**
+ * The highest `policy_id` issued so far. Ids must strictly increase and are
+ * never reused, even after a policy's PDA is closed: the attester's `nonce`
+ * is the policy id, so a repeated id would let a stale attestation settle a
+ * policy it was not signed for (CHA-18).
+ */
+lastPolicyId: bigint; feeBps: number; bump: number;  };
 
 export type PoolConfigArgs = { admin: Address; 
 /**
  * The attester's raw 32-byte ed25519 public key, not a wallet address.
  * `settle_policy` accepts only an attestation signed by this key.
  */
-oracleAuthority: Address; usdcMint: Address; 
+oracleAuthority: Address; 
+/**
+ * The only key allowed to post history-batch roots (CHA-18). Set at init and
+ * never changeable, like every other authority in this pool.
+ */
+keeper: Address; usdcMint: Address; 
 /** Program-owned token account that holds all pool liquidity. */
 treasury: Address; 
 /** Deposited capital plus net premiums, minus realised payouts. */
 totalCapital: number | bigint; 
 /** Sum of `payout_amount` across unsettled policies. */
-totalLockedRisk: number | bigint; totalShares: number | bigint; totalFees: number | bigint; feeBps: number; bump: number;  };
+totalLockedRisk: number | bigint; totalShares: number | bigint; totalFees: number | bigint; 
+/**
+ * The highest `policy_id` issued so far. Ids must strictly increase and are
+ * never reused, even after a policy's PDA is closed: the attester's `nonce`
+ * is the policy id, so a repeated id would let a stale attestation settle a
+ * policy it was not signed for (CHA-18).
+ */
+lastPolicyId: number | bigint; feeBps: number; bump: number;  };
 
 /** Gets the encoder for {@link PoolConfigArgs} account data. */
 export function getPoolConfigEncoder(): FixedSizeEncoder<PoolConfigArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['admin', getAddressEncoder()], ['oracleAuthority', getAddressEncoder()], ['usdcMint', getAddressEncoder()], ['treasury', getAddressEncoder()], ['totalCapital', getU64Encoder()], ['totalLockedRisk', getU64Encoder()], ['totalShares', getU64Encoder()], ['totalFees', getU64Encoder()], ['feeBps', getU16Encoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: POOL_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['admin', getAddressEncoder()], ['oracleAuthority', getAddressEncoder()], ['keeper', getAddressEncoder()], ['usdcMint', getAddressEncoder()], ['treasury', getAddressEncoder()], ['totalCapital', getU64Encoder()], ['totalLockedRisk', getU64Encoder()], ['totalShares', getU64Encoder()], ['totalFees', getU64Encoder()], ['lastPolicyId', getU64Encoder()], ['feeBps', getU16Encoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: POOL_CONFIG_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link PoolConfig} account data. */
 export function getPoolConfigDecoder(): FixedSizeDecoder<PoolConfig> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['admin', getAddressDecoder()], ['oracleAuthority', getAddressDecoder()], ['usdcMint', getAddressDecoder()], ['treasury', getAddressDecoder()], ['totalCapital', getU64Decoder()], ['totalLockedRisk', getU64Decoder()], ['totalShares', getU64Decoder()], ['totalFees', getU64Decoder()], ['feeBps', getU16Decoder()], ['bump', getU8Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['admin', getAddressDecoder()], ['oracleAuthority', getAddressDecoder()], ['keeper', getAddressDecoder()], ['usdcMint', getAddressDecoder()], ['treasury', getAddressDecoder()], ['totalCapital', getU64Decoder()], ['totalLockedRisk', getU64Decoder()], ['totalShares', getU64Decoder()], ['totalFees', getU64Decoder()], ['lastPolicyId', getU64Decoder()], ['feeBps', getU16Decoder()], ['bump', getU8Decoder()]]);
 }
 
 /** Gets the codec for {@link PoolConfig} account data. */
@@ -98,5 +122,5 @@ export async function fetchAllMaybePoolConfig(
 }
 
 export function getPoolConfigSize(): number {
-  return 171;
+  return 211;
 }

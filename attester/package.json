@@ -6,7 +6,8 @@
   "description": "Off-chain delivery attester for freight_delay: data source -> ed25519-signed attestation",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "attest": "bun run src/cli.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

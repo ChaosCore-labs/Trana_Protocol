@@ -9,3 +9,4 @@
 export * from './lpPosition.ts';
 export * from './policy.ts';
 export * from './poolConfig.ts';
+export * from './registry.ts';

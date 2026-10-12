@@ -9,5 +9,6 @@
 export * from './buyPolicy.ts';
 export * from './depositCapital.ts';
 export * from './initializePool.ts';
+export * from './postRoot.ts';
 export * from './settlePolicy.ts';
 export * from './withdrawCapital.ts';

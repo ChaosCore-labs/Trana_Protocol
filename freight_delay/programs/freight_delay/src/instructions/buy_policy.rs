@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::{
     constants::*,
@@ -71,6 +71,14 @@ impl<'info> BuyPolicy<'info> {
             expected_delivery.checked_add(grace_period).is_some(),
             FreightDelayError::InvalidDeadline
         );
+        // Ids strictly increase and are never reused. `nonce` is the policy id, so
+        // a repeated id would let an attestation signed for a closed policy settle
+        // a new one on the same shipment (CHA-18).
+        require!(
+            policy_id > self.config.last_policy_id,
+            FreightDelayError::InvalidPolicyId
+        );
+        self.config.last_policy_id = policy_id;
         require!(
             self.config.free_capital() >= payout_amount,
             FreightDelayError::Insolvent
@@ -101,16 +109,18 @@ impl<'info> BuyPolicy<'info> {
             .checked_add(payout_amount)
             .ok_or(FreightDelayError::MathOverflow)?;
 
-        token::transfer(
+        token::transfer_checked(
             CpiContext::new(
                 self.token_program.key(),
-                Transfer {
+                TransferChecked {
                     from: self.insured_usdc.to_account_info(),
+                    mint: self.usdc_mint.to_account_info(),
                     to: self.treasury.to_account_info(),
                     authority: self.insured.to_account_info(),
                 },
             ),
             premium_amount,
+            self.usdc_mint.decimals,
         )?;
 
         self.policy.set_inner(Policy {

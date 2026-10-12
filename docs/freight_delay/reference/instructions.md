@@ -4,7 +4,7 @@ Every account each instruction requires, with the constraints that bind it.
 `mut` marks accounts the handler writes; everything else is read-only for that
 instruction.
 
-## `initialize_pool(fee_bps: u16)`
+## `initialize_pool(fee_bps: u16, keeper: Pubkey)`
 
 | Account | Flags | Constraints |
 |---|---|---|
@@ -21,7 +21,7 @@ instruction.
 | Account | Flags | Constraints |
 |---|---|---|
 | `lp` | `mut`, signer | — |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint = usdc_mint`, `token::authority = config` |
 | `lp_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = lp` |
@@ -37,7 +37,7 @@ the `anchor-lang` `init-if-needed` feature is enabled.
 | Account | Flags | Constraints |
 |---|---|---|
 | `insured` | `mut`, signer | The shipper; pays the premium |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `insured_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = insured` |
@@ -55,10 +55,11 @@ on the struct — Anchor cannot derive the address otherwise.
 | Account | Flags | Constraints |
 |---|---|---|
 | `crank` | `mut`, signer | Any signer; no authority |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `policy` | `mut` | `seeds = [policy, config, policy.policy_id]`, `bump = policy.bump` |
+| `insured` | `mut` | The shipper's wallet; `constraint = insured.key() == policy.insured` — receives the closed policy's rent |
 | `insured_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = policy.insured` |
 | `instructions` | read | `address = solana_instructions_sysvar::ID` — the instructions sysvar |
 | `token_program` | read | — |
@@ -82,7 +83,7 @@ No `system_program` — nothing is created.
 | Account | Flags | Constraints |
 |---|---|---|
 | `lp` | `mut`, signer | — |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `lp_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = lp` |
@@ -90,6 +91,20 @@ No `system_program` — nothing is created.
 | `token_program` | read | — |
 
 No `system_program` — nothing is created.
+
+## `post_root(epoch: u64, root: [u8; 32], count: u64)`
+
+| Account | Flags | Constraints |
+|---|---|---|
+| `keeper` | `mut`, signer | Pays for the registry creation |
+| `config` | read | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump`, `constraint = keeper.key() == config.keeper` |
+| `registry` | **init** | `seeds = [registry, config, epoch]`, `payer = keeper`, `space = 8 + Registry::INIT_SPACE` |
+| `system_program` | read | — |
+
+`epoch` appears in the seeds, so `#[instruction(epoch: u64)]` is required on the
+struct. The PDA is `init`, not `init_if_needed`, so an epoch is postable exactly
+once: a re-post fails rather than overwriting a root that clients may already
+have verified against.
 
 ## Error mapping
 

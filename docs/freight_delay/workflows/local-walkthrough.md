@@ -30,7 +30,8 @@ in-process, deploys the program, and then:
 | 3 | `buy_policy` | payout locked, premium credited net of fee |
 | 4a | `settle_policy` | a **late** arrival pays, capital debited by the payout |
 | 4b | `settle_policy` | an **on-time** arrival pays nothing but releases the lock |
-| 5 | `settle_policy` | the last open policy releases its lock; free capital equals total |
+| 5 | crank | the crank scans for the last open policy, settles it on time, and frees the capital |
+| 6 | `post_root` | the keeper posts a batch root; the registry account exists |
 
 Each stage prints `total_capital`, `total_locked_risk`, `free_capital` and
 `total_fees`, so the accounting is readable without a debugger. The script exits
@@ -39,9 +40,11 @@ non-zero if any assertion fails.
 ## The attester is the real one
 
 Stage 4 signs the arrival with `attester/src/signing.ts` and encodes it with
-`attester/src/payload.ts` — the same code an operator would run. The program
-accepts it because the pool was initialised with that key's raw ed25519 public
-key as `oracle_authority`.
+`attester/src/payload.ts` — the same code an operator would run. Stage 5 exercises
+the crank (`client/crank.ts`) instead of a hand-built instruction: it scans the
+pool's live policies, asks the source for the arrival, and settles what it can.
+The program accepts both because the pool was initialised with that key's raw
+ed25519 public key as `oracle_authority`.
 
 The same key also signs stage 1, because it is part of the pool's address: only
 the attester can create the pool it attests for.
@@ -68,6 +71,7 @@ time.
 | File | Role |
 |---|---|
 | `scripts/lifecycle.ts` | the walkthrough |
+| `client/crank.ts` | the settlement crank: scan, attest, settle (CHA-19) |
 | `client/program.ts` | harness over the generated client (builders, PDAs, account codecs) |
 | `client/generated/` | Codama client generated from `target/idl/freight_delay.json` |
 | `scripts/codegen.ts` | regenerates `client/generated` |

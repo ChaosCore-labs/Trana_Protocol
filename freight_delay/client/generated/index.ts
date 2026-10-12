@@ -13,3 +13,4 @@ export * from './events/index.ts';
 export * from './instructions/index.ts';
 export * from './pdas/index.ts';
 export * from './programs/index.ts';
+export * from './types/index.ts';

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount, Transfer, transfer};
+use anchor_spl::token::{Mint, Token, TokenAccount, TransferChecked, transfer_checked};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 use solana_sdk_ids::ed25519_program;
 
@@ -12,6 +12,9 @@ use crate::{constants::CONFIG_SEED, error::FreightDelayError, state::PoolConfig}
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct DeliveryAttestation {
     pub shipment_id: u64,
+    /// The attested **destination-terminal arrival**, unix seconds: the event a
+    /// carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
+    /// delivery (CHA-33).
     pub actual_delivery: i64,
     pub terminal_code: u64,
     pub nonce: u64,
@@ -120,8 +123,14 @@ fn ed25519_ix_matches(
 }
 
 /// Transfers `amount` out of the pool treasury, signed by the `PoolConfig` PDA.
+///
+/// `transfer_checked` (not bare `transfer`): the mint and its decimals are
+/// passed explicitly, so the token program verifies the mint against both token
+/// accounts. This is the top-program floor auditors expect and the prerequisite
+/// for a future Token-2022 USDC.
 pub fn transfer_from_treasury<'info>(
     token_program: &Program<'info, Token>,
+    mint: &Account<'info, Mint>,
     treasury: &Account<'info, TokenAccount>,
     recipient: &Account<'info, TokenAccount>,
     config: &Account<'info, PoolConfig>,
@@ -135,17 +144,19 @@ pub fn transfer_from_treasury<'info>(
     ];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
 
-    transfer(
+    transfer_checked(
         CpiContext::new_with_signer(
             token_program.key(),
-            Transfer {
+            TransferChecked {
                 from: treasury.to_account_info(),
+                mint: mint.to_account_info(),
                 to: recipient.to_account_info(),
                 authority: config.to_account_info(),
             },
             signer_seeds,
         ),
         amount,
+        mint.decimals,
     )
 }
 

@@ -106,11 +106,14 @@ reason about. The delivery record lives in the `DeliveryAttested` event.
 ## The single outbound CPI
 
 `instructions/shared.rs` holds the only function in the program that signs with
-program-derived seeds:
+program-derived seeds. Every transfer in the program is `transfer_checked`: the
+mint and its decimals are passed explicitly, so the token program verifies the
+mint against both token accounts (CHA-17).
 
 ```rust
 pub fn transfer_from_treasury<'info>(
     token_program: &Program<'info, Token>,
+    mint: &Account<'info, Mint>,
     treasury: &Account<'info, TokenAccount>,
     recipient: &Account<'info, TokenAccount>,
     config: &Account<'info, PoolConfig>,
@@ -124,17 +127,19 @@ pub fn transfer_from_treasury<'info>(
     ];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
 
-    transfer(
+    transfer_checked(
         CpiContext::new_with_signer(
             token_program.key(),
-            Transfer {
+            TransferChecked {
                 from: treasury.to_account_info(),
+                mint: mint.to_account_info(),
                 to: recipient.to_account_info(),
                 authority: config.to_account_info(),
             },
             signer_seeds,
         ),
         amount,
+        mint.decimals,
     )
 }
 ```
@@ -150,17 +155,18 @@ is caller-supplied arbitrary.
 ```text
 programs/freight_delay/src/
 ├── lib.rs                           # declare_id!, #[program] mod freight_delay — forwarding only
-├── constants.rs                     # 4 seed literals + FEE_DENOMINATOR
-├── error.rs                         # FreightDelayError — 12 flat variants
-├── events.rs                        # six events
+├── constants.rs                     # 5 seed literals + FEE_DENOMINATOR
+├── error.rs                         # FreightDelayError — 13 flat variants
+├── events.rs                        # eight events
 ├── instructions.rs                  # pub mod + pub use registry
-├── state.rs                         # PoolConfig, LpPosition, Policy
+├── state.rs                         # PoolConfig, LpPosition, Policy, Registry
 └── instructions/
     ├── initialize_pool.rs
     ├── deposit_capital.rs
     ├── buy_policy.rs
     ├── settle_policy.rs
     ├── withdraw_capital.rs
+    ├── post_root.rs
     └── shared.rs                    # attestation verification + transfer_from_treasury
 ```
 
