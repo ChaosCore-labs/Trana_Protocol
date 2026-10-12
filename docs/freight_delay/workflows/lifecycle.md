@@ -105,6 +105,12 @@ Liveness here is a first-class concern rather than a formality; see
 [Invariants](/freight_delay/protocol/invariants) for why that missing timeout is a
 decision rather than an oversight.
 
+A cranker ships with the repo: `freight_delay/client/crank.ts` scans the pool's
+live policies, asks the attester's source for each arrival, and settles every
+matured one it can (CHA-19). It filters by re-deriving each policy's PDA, because
+the pool is not a field on the policy. The keypair it uses is unprivileged — the
+worst case if it leaks is that someone else pays fees.
+
 ## Pool state machine
 
 ```mermaid

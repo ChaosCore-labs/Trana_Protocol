@@ -19,6 +19,8 @@ import { SYSVAR_CLOCK_ADDRESS } from "@solana/sysvars";
 import { TOKEN_PROGRAM_ADDRESS, getInitializeMintInstruction, getMintToATAInstructionPlanAsync } from "@solana-program/token";
 
 import { privateKeyFromSeed, publicKeyFromPrivate } from "../../attester/src/signing.ts";
+import { SimulatedSource } from "../../attester/src/simulated-source.ts";
+import { settleMaturedPolicies } from "../client/crank.ts";
 import {
   ataFor,
   buyPolicy,
@@ -254,25 +256,32 @@ for (const s of scenarios) {
 
 // -------------------------------------------------------------------- stage 4
 
-console.log("\nstage 4 — release the remaining policy");
-// Policy 1 was bought in stage 3 and never settled. Settling it on time
-// releases its lock without paying, which is what frees the last capital.
+console.log("\nstage 4 — crank settles the remaining matured policy");
+// Policy 1 was bought in stage 3 and never settled. The crank finds it by
+// scanning, asks the source for its arrival, and settles it on time — no manual
+// instruction. The clock is already past its deadline: the scenarios above
+// advanced it, and time travel is forward-only.
 const openBefore = await readPool(h);
-// No time travel: the clock is already past policy 1's deadline, because the
-// scenarios above advanced it. Time travel is forward-only.
-const { instructions: onTimeIx } = await deliveryInstructions(h, {
-  privateKey: ATTESTER_KEY,
-  publicKey: ATTESTER_PUBKEY,
-  shipmentId: 27n,
-  actualDelivery: expectedDelivery - BigInt(DAY),
-  terminalCode: 4201n,
-  nonce: 1n,
-  crank: admin,
-  insured: shipper.address,
+const source = new SimulatedSource({
+  arrivals: {
+    "27": { actualDelivery: expectedDelivery - BigInt(DAY), terminalCode: 4201n },
+  },
 });
-await client.sendTransaction(onTimeIx);
+const { settled, skipped } = await settleMaturedPolicies(h, {
+  privateKey: ATTESTER_KEY,
+  attesterPublicKey: ATTESTER_PUBKEY,
+  crank: admin,
+  source,
+  now: await chainNow(),
+  send: (ixs) => client.sendTransaction(ixs),
+});
+check(`crank settled [${settled.join(", ")}]`, settled.length === 1 && settled[0] === 1n);
+check(
+  "crank skipped only unsettleable policies",
+  skipped.every((s) => s.reason === "immature" || s.reason === "no-arrival"),
+);
 const openAfter = await readPool(h);
-report("after settling policy 1", openAfter);
+report("after the crank", openAfter);
 check("lock released", openAfter.totalLockedRisk === openBefore.totalLockedRisk - PAYOUT);
 check("no payout", openAfter.totalCapital === openBefore.totalCapital);
 
