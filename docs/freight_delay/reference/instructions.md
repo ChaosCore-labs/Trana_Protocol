@@ -21,7 +21,7 @@ instruction.
 | Account | Flags | Constraints |
 |---|---|---|
 | `lp` | `mut`, signer | — |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint = usdc_mint`, `token::authority = config` |
 | `lp_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = lp` |
@@ -37,7 +37,7 @@ the `anchor-lang` `init-if-needed` feature is enabled.
 | Account | Flags | Constraints |
 |---|---|---|
 | `insured` | `mut`, signer | The shipper; pays the premium |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `insured_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = insured` |
@@ -55,7 +55,7 @@ on the struct — Anchor cannot derive the address otherwise.
 | Account | Flags | Constraints |
 |---|---|---|
 | `crank` | `mut`, signer | Any signer; no authority |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `policy` | `mut` | `seeds = [policy, config, policy.policy_id]`, `bump = policy.bump` |
@@ -83,7 +83,7 @@ No `system_program` — nothing is created.
 | Account | Flags | Constraints |
 |---|---|---|
 | `lp` | `mut`, signer | — |
-| `config` | `mut` | `seeds = [config, config.usdc_mint]`, `bump = config.bump` |
+| `config` | `mut` | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `lp_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = lp` |
@@ -97,7 +97,7 @@ No `system_program` — nothing is created.
 | Account | Flags | Constraints |
 |---|---|---|
 | `keeper` | `mut`, signer | Pays for the registry creation |
-| `config` | read | `seeds = [config, config.usdc_mint]`, `bump = config.bump`, `constraint = keeper.key() == config.keeper` |
+| `config` | read | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump`, `constraint = keeper.key() == config.keeper` |
 | `registry` | **init** | `seeds = [registry, config, epoch]`, `payer = keeper`, `space = 8 + Registry::INIT_SPACE` |
 | `system_program` | read | — |
 
