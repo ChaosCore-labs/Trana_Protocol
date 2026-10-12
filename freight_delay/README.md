@@ -13,7 +13,43 @@ The pool is **fully collateralised at all times**: every outstanding payout is
 backed by capital the pool already holds, and that invariant is re-checked after
 every state change.
 
-Program ID: `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`
+Program ID: `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs` — deployed on **devnet**
+([explorer](https://explorer.solana.com/address/4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs?cluster=devnet))
+and the same id on localnet, because the deploy reuses the checked-in program
+keypair. The deployment record, the cluster details and the full architecture
+write-up are in the [root README](../README.md#deployed-on-devnet).
+
+## Architecture
+
+![freight_delay architecture](assets/architecture.webp)
+
+<details>
+<summary>Diagram source (mermaid)</summary>
+
+```mermaid
+flowchart TB
+    SHIP["Shipper (insured)"] -->|buy_policy: premium| TRE
+    LP["LP"] -->|deposit_capital| TRE
+    LP -->|withdraw_capital| TRE
+    TRE[("treasury — all pool USDC<br/>authority = PoolConfig PDA")] -->|"payout, only if late"| SHIP
+    ATT["Attester — ed25519 key, off chain"] -.->|"signed arrival"| SP
+    CRANK["Crank — anyone"] --> SP["settle_policy"]
+    KEEP["Keeper"] --> PR["post_root"]
+    SP --> POL[("Policy PDA")]
+    SP -->|"close: rent back to the shipper"| SHIP
+    PR --> REG[("Registry PDA")]
+    POL -.->|PolicyClosed event| REG
+    CFG[("PoolConfig PDA<br/>capital, locked risk, shares, fees")] --- TRE
+    CFG --- POL
+    classDef plain fill:#313244,stroke:#89b4fa,color:#cdd6f4
+```
+
+</details>
+
+Settlement is the only place risk leaves the pool, and the only place money does:
+the payout is a transfer from the treasury, and every handler that moves capital
+ends with `assert_solvent()` — `total_locked_risk <= total_capital`. The guards at
+each step are listed in [`../docs/freight_delay/protocol/instructions.md`](../docs/freight_delay/protocol/instructions.md).
 
 ## Layout
 
@@ -70,14 +106,31 @@ release profile turns on `overflow-checks` with `lto = "fat"` and
 ```bash
 cd freight_delay
 anchor build                  # -> target/deploy/freight_delay.so
-cargo nextest run             # 38 tests — this is Anchor.toml [scripts].test
+cargo nextest run             # 38 tests, color when stdout is a terminal
+anchor test                   # runs Anchor.toml [scripts].test: nextest with --color always
 cargo check --all-targets     # fast type-check loop
+bun run devnet-e2e            # the lifecycle against the deployed devnet program
 ```
 
 **Build first, always.** `tests/test_freight_delay.rs` loads `target/deploy/freight_delay.so`
 with `include_bytes!` at compile time, so running the tests against a stale build
 silently tests old code. `cargo test` is not the test command; `cargo nextest run`
 is.
+
+## Test evidence
+
+![LiteSVM suite: 38 tests passed](assets/tests-nextest.webp)
+
+![Devnet end-to-end run: all checks passed](assets/devnet-e2e.webp)
+
+`cargo nextest run` drives the built `.so` in-process through LiteSVM, so it covers
+every guard and every rejection path without paying fees. `bun run devnet-e2e`
+(`scripts/devnet-e2e.ts`) proves the *deployed* binary on devnet end to end:
+`initialize_pool` → `deposit_capital` → `buy_policy` ×2 → `settle_policy` for a late
+and an on-time arrival → `post_root`, asserting the pool's accounting after each
+step. It cannot time-travel the way the local walkthrough does, so it buys a policy
+whose deadline is 30 seconds out and polls the cluster clock until it passes — the
+script retries on the public RPC's HTTP 429s.
 
 ## How it works
 

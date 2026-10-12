@@ -79,13 +79,22 @@ them.
 
 ## Maturity
 
-The program has never been deployed to a public cluster in this repository's
-history. `Anchor.toml` configures `localnet` only, with the program id pinned as
-`4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
+The program is deployed to **devnet** at
+`4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`
+([explorer](https://explorer.solana.com/address/4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs?cluster=devnet)),
+as an upgradeable program whose upgrade authority is the deployer's keypair — so
+the code can still change under the same program id, and nothing here is a
+production commitment. It has never been deployed to mainnet. Because the deploy
+reuses the checked-in program keypair, localnet and devnet derive identical
+addresses; `Anchor.toml` defaults to `localnet`, so a devnet deploy passes
+`--provider.cluster devnet` explicitly.
 
-Test coverage is 29 LiteSVM integration tests: the happy path of every
-instruction, several rejection cases, and one regression per finding from the
-pre-freeze adversarial audit. The suite passes. It is not a security audit — most
+Test coverage is 38 tests: 31 LiteSVM integration tests and 7 unit tests of the
+ed25519 precompile parsing. The integration suite covers the happy path of every
+instruction, the rejection cases, and one regression per finding from the
+pre-freeze adversarial audit and the later scan; `bun run devnet-e2e` drives the
+deployed program through the whole lifecycle on devnet, asserting the pool's
+accounting after each step. The suite passes. It is not a security audit — most
 notably, no test asserts a specific error code and no test covers arithmetic
 boundaries.
 

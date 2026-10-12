@@ -8,6 +8,7 @@
     "codegen": "bun run scripts/codegen.ts",
     "prelifecycle": "bun install --cwd ../attester",
     "lifecycle": "bun run scripts/lifecycle.ts",
+    "devnet-e2e": "bun run scripts/devnet-e2e.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
