@@ -16,4 +16,6 @@ export const LP_POSITION_SEED: ReadonlyUint8Array = new Uint8Array([108, 112, 95
 
 export const POLICY_SEED: ReadonlyUint8Array = new Uint8Array([112, 111, 108, 105, 99, 121]);
 
+export const REGISTRY_SEED: ReadonlyUint8Array = new Uint8Array([114, 101, 103, 105, 115, 116, 114, 121]);
+
 export const TREASURY_SEED: ReadonlyUint8Array = new Uint8Array([116, 114, 101, 97, 115, 117, 114, 121]);

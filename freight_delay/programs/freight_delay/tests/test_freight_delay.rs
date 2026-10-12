@@ -73,6 +73,14 @@ fn policy_pda(config: &Pubkey, policy_id: u64) -> Pubkey {
     .0
 }
 
+fn registry_pda(config: &Pubkey, epoch: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"registry", config.as_ref(), &epoch.to_le_bytes()],
+        &freight_delay::id(),
+    )
+    .0
+}
+
 /// The SLA deadline the program compares a delivery against.
 fn deadline() -> i64 {
     BASE_TS + SLA_DELTA + GRACE
@@ -191,7 +199,11 @@ fn setup() -> Env {
 fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::InitializePool { fee_bps }.data(),
+        &instruction::InitializePool {
+            fee_bps,
+            keeper: env.admin.pubkey(),
+        }
+        .data(),
         accounts::InitializePool {
             admin: env.admin.pubkey(),
             usdc_mint: env.usdc_mint,
@@ -205,6 +217,21 @@ fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
     );
     // The attester's key is part of the config's address, so it signs too.
     send_signed(&mut env.svm, &[&env.admin, &env.oracle], &[ix])
+}
+
+fn post_root(env: &mut Env, epoch: u64, root: [u8; 32], count: u64) -> TransactionResult {
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::PostRoot { epoch, root, count }.data(),
+        accounts::PostRoot {
+            keeper: env.admin.pubkey(),
+            config: env.config,
+            registry: registry_pda(&env.config, epoch),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &env.admin, &[ix])
 }
 
 fn deposit_capital(env: &mut Env, amount: u64) -> TransactionResult {
@@ -353,6 +380,7 @@ fn initialize_pool_sets_state() {
     let config = read_config(&env.svm, &env.config);
     assert_eq!(config.admin, env.admin.pubkey());
     assert_eq!(config.oracle_authority, env.oracle.pubkey());
+    assert_eq!(config.keeper, env.admin.pubkey());
     assert_eq!(config.usdc_mint, env.usdc_mint);
     assert_eq!(config.treasury, env.treasury);
     assert_eq!(config.fee_bps, FEE_BPS);
@@ -368,6 +396,7 @@ fn initialize_pool_sets_state() {
     let event: events::PoolInitialized = parse_event(&res);
     assert_eq!(event.config, env.config);
     assert_eq!(event.oracle_authority, env.oracle.pubkey());
+    assert_eq!(event.keeper, env.admin.pubkey());
     assert_eq!(event.fee_bps, FEE_BPS);
 }
 
@@ -412,12 +441,60 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
 
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::InitializePool { fee_bps: FEE_BPS }.data(),
+        &instruction::InitializePool {
+            fee_bps: FEE_BPS,
+            keeper: env.admin.pubkey(),
+        }
+        .data(),
         metas,
     );
 
     assert!(send(&mut env.svm, &squatter, &[ix]).is_err());
     assert!(env.svm.get_account(&env.config).is_none());
+}
+
+#[test]
+fn post_root_stores_the_batch_root() {
+    let mut env = funded_pool(1_000 * UNIT);
+    let root = [7u8; 32];
+    let res = post_root(&mut env, 1, root, 42);
+    assert!(res.is_ok());
+
+    let raw = env.svm.get_account(&registry_pda(&env.config, 1)).unwrap();
+    let mut data: &[u8] = &raw.data;
+    let stored = freight_delay::state::Registry::try_deserialize(&mut data).unwrap();
+    assert_eq!(stored.epoch, 1);
+    assert_eq!(stored.root, root);
+    assert_eq!(stored.count, 42);
+
+    let event: events::RootPosted = parse_event(&res);
+    assert_eq!(event.config, env.config);
+    assert_eq!(event.root, root);
+    assert_eq!(event.count, 42);
+}
+
+#[test]
+fn post_root_rejects_a_stranger() {
+    let mut env = funded_pool(1_000 * UNIT);
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::PostRoot {
+            epoch: 1,
+            root: [7u8; 32],
+            count: 1,
+        }
+        .data(),
+        accounts::PostRoot {
+            keeper: env.lp.pubkey(),
+            config: env.config,
+            registry: registry_pda(&env.config, 1),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    // `env.lp` is not the configured keeper.
+    assert!(send(&mut env.svm, &env.lp, &[ix]).is_err());
+    assert!(env.svm.get_account(&registry_pda(&env.config, 1)).is_none());
 }
 
 #[test]

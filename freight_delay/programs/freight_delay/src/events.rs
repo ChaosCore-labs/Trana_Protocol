@@ -7,6 +7,7 @@ pub struct PoolInitialized {
     pub treasury: Pubkey,
     pub admin: Pubkey,
     pub oracle_authority: Pubkey,
+    pub keeper: Pubkey,
     pub fee_bps: u16,
 }
 
@@ -95,4 +96,15 @@ pub struct CapitalWithdrawn {
     pub shares_burned: u64,
     pub amount: u64,
     pub total_capital: u64,
+}
+
+/// Emitted when the keeper posts a history-batch root (CHA-18). The root is the
+/// integrity half of the archive; the `PolicyClosed` events are the
+/// availability half, and they stay in chain history permanently.
+#[event]
+pub struct RootPosted {
+    pub config: Pubkey,
+    pub epoch: u64,
+    pub root: [u8; 32],
+    pub count: u64,
 }

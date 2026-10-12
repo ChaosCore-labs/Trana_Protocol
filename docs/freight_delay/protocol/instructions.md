@@ -1,6 +1,6 @@
 # Instructions
 
-Five instructions. `lib.rs` contains no logic — each `#[program]` function
+Six instructions. `lib.rs` contains no logic — each `#[program]` function
 forwards its arguments and `ctx.bumps` into the handler in the instruction's own
 module, where the guards and arithmetic live.
 
@@ -12,8 +12,9 @@ module, where the guards and arithmetic live.
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
 | `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `free_capital >= payout` | `PolicyPurchased` |
 
-| `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled` |
+| `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled`, `PolicyClosed` |
 | `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital` | `CapitalWithdrawn` |
+| `post_root` | keeper | `keeper == config.keeper`; the `epoch` PDA must be unposted (`init`) | `RootPosted` |
 
 Beyond these, the `#[derive(Accounts)]` structs carry constraints that are just
 as load-bearing: `associated_token::authority` on every user token account,
@@ -224,6 +225,24 @@ if they somehow presented the right PDA.
 There is no cooldown, no unbonding queue, and no withdrawal cap other than free
 capital. Withdrawal is immediate and unconditional once the pool has
 unencumbered capital.
+
+## `post_root`
+
+Posts one history-batch root. Keeper-signed; one `Registry` PDA per epoch.
+
+```rust
+pub fn post_root(ctx: Context<PostRoot>, epoch: u64, root: [u8; 32], count: u64) -> Result<()>
+```
+
+- **Guards:** `keeper == config.keeper`; the `[b"registry", config, epoch]` PDA must
+  be unposted (`init`).
+- **Effect:** writes `Registry { epoch, root, count }`.
+- **Event:** `RootPosted { config, epoch, root, count }`
+
+The program does not verify the Merkle root — it cannot, on chain. It authenticates
+the poster and stores the root; anyone holding the batch data checks inclusion
+against it. A withheld batch is undetectable, which is the residual trust the
+design accepts (see [Invariants](/freight_delay/protocol/invariants)).
 
 ## Related
 

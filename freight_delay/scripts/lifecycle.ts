@@ -27,7 +27,9 @@ import {
   depositCapital,
   initializePool,
   policyPda,
+  postRoot,
   readPool,
+  registryPda,
   treasuryPda,
   type Harness,
 } from "../client/program.ts";
@@ -149,7 +151,7 @@ check("USDC minted to LP and shipper", true);
 // -------------------------------------------------------------------- stage 1
 
 console.log("\nstage 1 — initialize_pool");
-await client.sendTransaction([initializePool(h, FEE_BPS, attester)]);
+await client.sendTransaction([initializePool(h, FEE_BPS, attester, admin.address)]);
 let pool = await readPool(h);
 report("after initialize_pool", pool);
 check(`fee_bps = ${pool.feeBps}`, pool.feeBps === FEE_BPS);
@@ -276,6 +278,16 @@ check("no payout", openAfter.totalCapital === openBefore.totalCapital);
 
 const free = openAfter.totalCapital - openAfter.totalLockedRisk;
 check(`no risk outstanding — free ${usdc(free)} equals total capital`, free === openAfter.totalCapital);
+
+console.log("\nstage 5 — keeper posts a history-batch root");
+// Placeholder root: the real Merkle batching over the closed policies lands
+// with the keeper service (CHA-19). This exercises the on-chain Registry path.
+const root = new Uint8Array(32).fill(0xab);
+await client.sendTransaction([await postRoot(h, admin, 1n, root, 3n)]);
+const registry = await client.rpc
+  .getAccountInfo(await registryPda(programId, config, 1n))
+  .send();
+check("registry posted", registry.value !== null);
 
 console.log(failures === 0 ? "\n✓ all checks passed" : `\n✗ ${failures} check(s) FAILED`);
 client.surfnet.stop();

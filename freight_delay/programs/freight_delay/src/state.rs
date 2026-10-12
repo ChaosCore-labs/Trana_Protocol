@@ -11,6 +11,9 @@ pub struct PoolConfig {
     /// The attester's raw 32-byte ed25519 public key, not a wallet address.
     /// `settle_policy` accepts only an attestation signed by this key.
     pub oracle_authority: Pubkey,
+    /// The only key allowed to post history-batch roots (CHA-18). Set at init and
+    /// never changeable, like every other authority in this pool.
+    pub keeper: Pubkey,
     pub usdc_mint: Pubkey,
     /// Program-owned token account that holds all pool liquidity.
     pub treasury: Pubkey,
@@ -69,4 +72,20 @@ pub struct Policy {
     pub is_settled: bool,
     pub is_paid: bool,
     pub bump: u8,
+}
+
+/// One posted history-batch root (CHA-18). The keeper writes one per batch of
+/// policies closed since the last epoch; `root` is a Merkle root over that
+/// batch's `PolicyClosed` leaves, and `count` is how many leaves it covers.
+///
+/// This makes the off-chain policy database verifiable rather than trusted:
+/// anyone holding the batch data can prove a policy's inclusion against the
+/// root, so a forged record is detectable. Batch withholding is the residual
+/// assumption — the program cannot tell a withheld batch from one never posted.
+#[account]
+#[derive(InitSpace)]
+pub struct Registry {
+    pub epoch: u64,
+    pub root: [u8; 32],
+    pub count: u64,
 }

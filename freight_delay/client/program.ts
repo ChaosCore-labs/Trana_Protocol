@@ -19,10 +19,12 @@ import {
   findConfigPda,
   findLpPositionPda,
   findPolicyPda,
+  findRegistryPda,
   findTreasuryPda,
   getBuyPolicyInstruction,
   getDepositCapitalInstruction,
   getInitializePoolInstruction,
+  getPostRootInstruction,
   getSettlePolicyInstruction,
 } from "./generated/index.ts";
 
@@ -65,6 +67,7 @@ export function initializePool(
   h: Harness,
   feeBps: number,
   oracleAuthority: TransactionSigner,
+  keeper: Address,
 ): Instruction {
   return getInitializePoolInstruction(
     {
@@ -74,6 +77,7 @@ export function initializePool(
       config: h.config,
       treasury: h.treasury,
       feeBps,
+      keeper,
     },
     forProgram(h),
   );
@@ -243,6 +247,29 @@ export async function deliveryInstructions(
     signature,
   });
   return { instructions: [precompile, settle], message, signature };
+}
+
+export const registryPda = (programId: Address, config: Address, epoch: bigint) =>
+  findRegistryPda({ config, epoch }, { programAddress: programId }).then(([a]) => a);
+
+export async function postRoot(
+  h: Harness,
+  keeper: TransactionSigner,
+  epoch: bigint,
+  root: Uint8Array,
+  count: bigint,
+): Promise<Instruction> {
+  return getPostRootInstruction(
+    {
+      keeper,
+      config: h.config,
+      registry: await registryPda(h.programId, h.config, epoch),
+      epoch,
+      root,
+      count,
+    },
+    forProgram(h),
+  );
 }
 
 export async function readPool(h: Harness) {

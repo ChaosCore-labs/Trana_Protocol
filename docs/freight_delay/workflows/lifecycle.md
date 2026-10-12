@@ -14,10 +14,11 @@ sequenceDiagram
     participant Treasury as Treasury
     actor Attester as Attester (off chain)
     actor Crank
+    actor Keeper
 
     rect rgb(137, 180, 130, 0.12)
     Note over Admin, Treasury: Stage 1 — pool creation
-    Admin->>Program: initialize_pool(fee_bps) + attester signature
+    Admin->>Program: initialize_pool(fee_bps, keeper) + attester signature
     Program->>Treasury: init, authority = PoolConfig
     Program-->>Admin: PoolInitialized
     end
@@ -76,6 +77,13 @@ sequenceDiagram
     Program->>Treasury: transfer USDC
     Treasury-->>LP: USDC
     Program-->>LP: CapitalWithdrawn
+    end
+
+    rect rgb(137, 180, 130, 0.12)
+    Note over Keeper, Program: Stage 7 — history archive
+    Keeper->>Program: post_root(epoch, root, count)
+    Program->>Program: require keeper == config.keeper
+    Program-->>Keeper: RootPosted
     end
 ```
 

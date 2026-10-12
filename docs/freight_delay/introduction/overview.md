@@ -6,7 +6,7 @@ quoted delivery time; liquidity providers underwrite that risk for premium yield
 an off-chain attester signs deliveries, and that signature is verified on chain;
 and settlement is permissionless.
 
-The mechanism is deliberately small: **five instructions, three account types, and
+The mechanism is deliberately small: **six instructions, four account types, and
 one invariant.**
 
 ## The problem it targets

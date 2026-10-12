@@ -1,7 +1,7 @@
 # Events
 
-Six events, all defined in `events.rs`. Four are emitted one per state-mutating
-instruction, `initialize_pool` has its own, and `settle_policy` emits two. Each
+Eight events, all defined in `events.rs`. One per state-mutating instruction,
+`initialize_pool` has its own, and `settle_policy` emits three. Each
 is emitted at the **end** of its handler — after state mutation and after
 `assert_solvent()` — so an emitted event is proof that the transaction succeeded
 and its effects are durable.
@@ -153,6 +153,21 @@ batches, and the chain log remains the availability backstop.
 
 `outcome` is `PaidLate` or `ClosedOnTime`. There is no `PolicyVoided`: the program
 has no timeout path (CHA-15), so a policy cannot end any other way.
+
+## `RootPosted`
+
+```rust
+pub struct RootPosted {
+    pub config: Pubkey,
+    pub epoch: u64,
+    pub root: [u8; 32],
+    pub count: u64,
+}
+```
+
+Emitted by `post_root` when the keeper posts a history-batch root (CHA-18). The
+root is the integrity half of the archive; the `PolicyClosed` events are the
+availability half, and they stay in chain history permanently.
 
 ## `CapitalWithdrawn`
 

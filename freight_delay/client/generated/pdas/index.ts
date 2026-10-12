@@ -9,4 +9,5 @@
 export * from './config.ts';
 export * from './lpPosition.ts';
 export * from './policy.ts';
+export * from './registry.ts';
 export * from './treasury.ts';

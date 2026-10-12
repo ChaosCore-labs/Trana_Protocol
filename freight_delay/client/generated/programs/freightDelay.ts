@@ -8,23 +8,24 @@
 
 import { assertIsInstructionWithAccounts, containsBytes, extendClient, fixEncoderSize, getBytesEncoder, SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT, SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION, SOLANA_ERROR__PROGRAM_CLIENTS__UNRECOGNIZED_INSTRUCTION_TYPE, SolanaError, type Address, type ClientWithRpc, type ClientWithTransactionPlanning, type ClientWithTransactionSending, type ExtendedClient, type GetAccountInfoApi, type GetMultipleAccountsApi, type Instruction, type InstructionWithData, type ReadonlyUint8Array } from '@solana/kit';
 import { addSelfFetchFunctions, addSelfPlanAndSendFunctions, type SelfFetchFunctions, type SelfPlanAndSendFunctions } from '@solana/program-client-core';
-import { getLpPositionCodec, getPolicyCodec, getPoolConfigCodec, type LpPosition, type LpPositionArgs, type Policy, type PolicyArgs, type PoolConfig, type PoolConfigArgs } from '../accounts/index.ts';
-import { getBuyPolicyInstructionAsync, getDepositCapitalInstructionAsync, getInitializePoolInstructionAsync, getSettlePolicyInstructionAsync, getWithdrawCapitalInstructionAsync, parseBuyPolicyInstruction, parseDepositCapitalInstruction, parseInitializePoolInstruction, parseSettlePolicyInstruction, parseWithdrawCapitalInstruction, type BuyPolicyAsyncInput, type DepositCapitalAsyncInput, type InitializePoolAsyncInput, type ParsedBuyPolicyInstruction, type ParsedDepositCapitalInstruction, type ParsedInitializePoolInstruction, type ParsedSettlePolicyInstruction, type ParsedWithdrawCapitalInstruction, type SettlePolicyAsyncInput, type WithdrawCapitalAsyncInput } from '../instructions/index.ts';
-import { findConfigPda, findLpPositionPda, findPolicyPda, findTreasuryPda } from '../pdas/index.ts';
+import { getLpPositionCodec, getPolicyCodec, getPoolConfigCodec, getRegistryCodec, type LpPosition, type LpPositionArgs, type Policy, type PolicyArgs, type PoolConfig, type PoolConfigArgs, type Registry, type RegistryArgs } from '../accounts/index.ts';
+import { getBuyPolicyInstructionAsync, getDepositCapitalInstructionAsync, getInitializePoolInstructionAsync, getPostRootInstructionAsync, getSettlePolicyInstructionAsync, getWithdrawCapitalInstructionAsync, parseBuyPolicyInstruction, parseDepositCapitalInstruction, parseInitializePoolInstruction, parsePostRootInstruction, parseSettlePolicyInstruction, parseWithdrawCapitalInstruction, type BuyPolicyAsyncInput, type DepositCapitalAsyncInput, type InitializePoolAsyncInput, type ParsedBuyPolicyInstruction, type ParsedDepositCapitalInstruction, type ParsedInitializePoolInstruction, type ParsedPostRootInstruction, type ParsedSettlePolicyInstruction, type ParsedWithdrawCapitalInstruction, type PostRootAsyncInput, type SettlePolicyAsyncInput, type WithdrawCapitalAsyncInput } from '../instructions/index.ts';
+import { findConfigPda, findLpPositionPda, findPolicyPda, findRegistryPda, findTreasuryPda } from '../pdas/index.ts';
 
 export const FREIGHT_DELAY_PROGRAM_ADDRESS = '4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs' as Address<'4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs'>;
 
-export enum FreightDelayAccount { LpPosition, Policy, PoolConfig }
+export enum FreightDelayAccount { LpPosition, Policy, PoolConfig, Registry }
 
 export function identifyFreightDelayAccount(account: { data: ReadonlyUint8Array } | ReadonlyUint8Array): FreightDelayAccount {
     const data = 'data' in account ? account.data : account;
     if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([105, 241, 37, 200, 224, 2, 252, 90])), 0)) { return FreightDelayAccount.LpPosition; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([222, 135, 7, 163, 235, 177, 33, 68])), 0)) { return FreightDelayAccount.Policy; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([26, 108, 14, 123, 116, 230, 129, 43])), 0)) { return FreightDelayAccount.PoolConfig; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([47, 174, 110, 246, 184, 182, 252, 218])), 0)) { return FreightDelayAccount.Registry; }
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT, { accountData: data, programName: "freightDelay" });
 }
 
-export enum FreightDelayEvent { CapitalDeposited, CapitalWithdrawn, DeliveryAttested, PolicyClosed, PolicyPurchased, PolicySettled, PoolInitialized }
+export enum FreightDelayEvent { CapitalDeposited, CapitalWithdrawn, DeliveryAttested, PolicyClosed, PolicyPurchased, PolicySettled, PoolInitialized, RootPosted }
 
 export function identifyFreightDelayEvent(event: { data: ReadonlyUint8Array } | ReadonlyUint8Array): FreightDelayEvent {
     const data = 'data' in event ? event.data : event;
@@ -35,16 +36,18 @@ if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Arr
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([120, 100, 255, 218, 16, 36, 194, 192])), 0)) { return FreightDelayEvent.PolicyPurchased; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([67, 45, 149, 235, 199, 184, 83, 77])), 0)) { return FreightDelayEvent.PolicySettled; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([100, 118, 173, 87, 12, 198, 254, 229])), 0)) { return FreightDelayEvent.PoolInitialized; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([245, 251, 4, 0, 87, 227, 252, 231])), 0)) { return FreightDelayEvent.RootPosted; }
     throw new Error('The provided event could not be identified as a freightDelay event.');
 }
 
-export enum FreightDelayInstruction { BuyPolicy, DepositCapital, InitializePool, SettlePolicy, WithdrawCapital }
+export enum FreightDelayInstruction { BuyPolicy, DepositCapital, InitializePool, PostRoot, SettlePolicy, WithdrawCapital }
 
 export function identifyFreightDelayInstruction(instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array): FreightDelayInstruction {
     const data = 'data' in instruction ? instruction.data : instruction;
     if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([0, 59, 201, 101, 183, 3, 41, 24])), 0)) { return FreightDelayInstruction.BuyPolicy; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([157, 98, 40, 41, 205, 210, 121, 253])), 0)) { return FreightDelayInstruction.DepositCapital; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([95, 180, 10, 172, 84, 174, 232, 40])), 0)) { return FreightDelayInstruction.InitializePool; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([154, 210, 156, 158, 199, 27, 174, 35])), 0)) { return FreightDelayInstruction.PostRoot; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([180, 234, 21, 174, 50, 214, 91, 113])), 0)) { return FreightDelayInstruction.SettlePolicy; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([82, 32, 82, 118, 160, 116, 65, 104])), 0)) { return FreightDelayInstruction.WithdrawCapital; }
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION, { instructionData: data, programName: "freightDelay" });
@@ -54,6 +57,7 @@ export type ParsedFreightDelayInstruction<TProgram extends string = '4BtUosFfNUy
 | { instructionType: FreightDelayInstruction.BuyPolicy } & ParsedBuyPolicyInstruction<TProgram>
 | { instructionType: FreightDelayInstruction.DepositCapital } & ParsedDepositCapitalInstruction<TProgram>
 | { instructionType: FreightDelayInstruction.InitializePool } & ParsedInitializePoolInstruction<TProgram>
+| { instructionType: FreightDelayInstruction.PostRoot } & ParsedPostRootInstruction<TProgram>
 | { instructionType: FreightDelayInstruction.SettlePolicy } & ParsedSettlePolicyInstruction<TProgram>
 | { instructionType: FreightDelayInstruction.WithdrawCapital } & ParsedWithdrawCapitalInstruction<TProgram>
 
@@ -70,6 +74,8 @@ case FreightDelayInstruction.DepositCapital: { assertIsInstructionWithAccounts(i
 return { instructionType: FreightDelayInstruction.DepositCapital, ...parseDepositCapitalInstruction(instruction) }; }
 case FreightDelayInstruction.InitializePool: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: FreightDelayInstruction.InitializePool, ...parseInitializePoolInstruction(instruction) }; }
+case FreightDelayInstruction.PostRoot: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: FreightDelayInstruction.PostRoot, ...parsePostRootInstruction(instruction) }; }
 case FreightDelayInstruction.SettlePolicy: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: FreightDelayInstruction.SettlePolicy, ...parseSettlePolicyInstruction(instruction) }; }
 case FreightDelayInstruction.WithdrawCapital: { assertIsInstructionWithAccounts(instruction);
@@ -80,16 +86,16 @@ return { instructionType: FreightDelayInstruction.WithdrawCapital, ...parseWithd
 
 export type FreightDelayPlugin = { accounts: FreightDelayPluginAccounts; instructions: FreightDelayPluginInstructions; pdas: FreightDelayPluginPdas; identifyAccount: typeof identifyFreightDelayAccount; identifyInstruction: typeof identifyFreightDelayInstruction; parseInstruction: typeof parseFreightDelayInstruction; }
 
-export type FreightDelayPluginAccounts = { lpPosition: ReturnType<typeof getLpPositionCodec> & SelfFetchFunctions<LpPositionArgs, LpPosition>; policy: ReturnType<typeof getPolicyCodec> & SelfFetchFunctions<PolicyArgs, Policy>; poolConfig: ReturnType<typeof getPoolConfigCodec> & SelfFetchFunctions<PoolConfigArgs, PoolConfig>; }
+export type FreightDelayPluginAccounts = { lpPosition: ReturnType<typeof getLpPositionCodec> & SelfFetchFunctions<LpPositionArgs, LpPosition>; policy: ReturnType<typeof getPolicyCodec> & SelfFetchFunctions<PolicyArgs, Policy>; poolConfig: ReturnType<typeof getPoolConfigCodec> & SelfFetchFunctions<PoolConfigArgs, PoolConfig>; registry: ReturnType<typeof getRegistryCodec> & SelfFetchFunctions<RegistryArgs, Registry>; }
 
-export type FreightDelayPluginInstructions = { buyPolicy: (input: BuyPolicyAsyncInput) => ReturnType<typeof getBuyPolicyInstructionAsync> & SelfPlanAndSendFunctions; depositCapital: (input: DepositCapitalAsyncInput) => ReturnType<typeof getDepositCapitalInstructionAsync> & SelfPlanAndSendFunctions; initializePool: (input: InitializePoolAsyncInput) => ReturnType<typeof getInitializePoolInstructionAsync> & SelfPlanAndSendFunctions; settlePolicy: (input: SettlePolicyAsyncInput) => ReturnType<typeof getSettlePolicyInstructionAsync> & SelfPlanAndSendFunctions; withdrawCapital: (input: WithdrawCapitalAsyncInput) => ReturnType<typeof getWithdrawCapitalInstructionAsync> & SelfPlanAndSendFunctions; }
+export type FreightDelayPluginInstructions = { buyPolicy: (input: BuyPolicyAsyncInput) => ReturnType<typeof getBuyPolicyInstructionAsync> & SelfPlanAndSendFunctions; depositCapital: (input: DepositCapitalAsyncInput) => ReturnType<typeof getDepositCapitalInstructionAsync> & SelfPlanAndSendFunctions; initializePool: (input: InitializePoolAsyncInput) => ReturnType<typeof getInitializePoolInstructionAsync> & SelfPlanAndSendFunctions; postRoot: (input: PostRootAsyncInput) => ReturnType<typeof getPostRootInstructionAsync> & SelfPlanAndSendFunctions; settlePolicy: (input: SettlePolicyAsyncInput) => ReturnType<typeof getSettlePolicyInstructionAsync> & SelfPlanAndSendFunctions; withdrawCapital: (input: WithdrawCapitalAsyncInput) => ReturnType<typeof getWithdrawCapitalInstructionAsync> & SelfPlanAndSendFunctions; }
 
-export type FreightDelayPluginPdas = { treasury: typeof findTreasuryPda; policy: typeof findPolicyPda; lpPosition: typeof findLpPositionPda; config: typeof findConfigPda; }
+export type FreightDelayPluginPdas = { treasury: typeof findTreasuryPda; policy: typeof findPolicyPda; lpPosition: typeof findLpPositionPda; config: typeof findConfigPda; registry: typeof findRegistryPda; }
 
 export type FreightDelayPluginRequirements = ClientWithRpc<GetAccountInfoApi & GetMultipleAccountsApi> & ClientWithTransactionPlanning & ClientWithTransactionSending
 
 export function freightDelayProgram() {
     return <T extends FreightDelayPluginRequirements>(client: T): ExtendedClient<T, { freightDelay: FreightDelayPlugin }> => {
-        return extendClient(client, { freightDelay: <FreightDelayPlugin>{ accounts: { lpPosition: addSelfFetchFunctions(client, getLpPositionCodec()), policy: addSelfFetchFunctions(client, getPolicyCodec()), poolConfig: addSelfFetchFunctions(client, getPoolConfigCodec()) }, instructions: { buyPolicy: input => addSelfPlanAndSendFunctions(client, getBuyPolicyInstructionAsync(input)), depositCapital: input => addSelfPlanAndSendFunctions(client, getDepositCapitalInstructionAsync(input)), initializePool: input => addSelfPlanAndSendFunctions(client, getInitializePoolInstructionAsync(input)), settlePolicy: input => addSelfPlanAndSendFunctions(client, getSettlePolicyInstructionAsync(input)), withdrawCapital: input => addSelfPlanAndSendFunctions(client, getWithdrawCapitalInstructionAsync(input)) }, pdas: { treasury: findTreasuryPda, policy: findPolicyPda, lpPosition: findLpPositionPda, config: findConfigPda }, identifyAccount: identifyFreightDelayAccount, identifyInstruction: identifyFreightDelayInstruction, parseInstruction: parseFreightDelayInstruction } });
+        return extendClient(client, { freightDelay: <FreightDelayPlugin>{ accounts: { lpPosition: addSelfFetchFunctions(client, getLpPositionCodec()), policy: addSelfFetchFunctions(client, getPolicyCodec()), poolConfig: addSelfFetchFunctions(client, getPoolConfigCodec()), registry: addSelfFetchFunctions(client, getRegistryCodec()) }, instructions: { buyPolicy: input => addSelfPlanAndSendFunctions(client, getBuyPolicyInstructionAsync(input)), depositCapital: input => addSelfPlanAndSendFunctions(client, getDepositCapitalInstructionAsync(input)), initializePool: input => addSelfPlanAndSendFunctions(client, getInitializePoolInstructionAsync(input)), postRoot: input => addSelfPlanAndSendFunctions(client, getPostRootInstructionAsync(input)), settlePolicy: input => addSelfPlanAndSendFunctions(client, getSettlePolicyInstructionAsync(input)), withdrawCapital: input => addSelfPlanAndSendFunctions(client, getWithdrawCapitalInstructionAsync(input)) }, pdas: { treasury: findTreasuryPda, policy: findPolicyPda, lpPosition: findLpPositionPda, config: findConfigPda, registry: findRegistryPda }, identifyAccount: identifyFreightDelayAccount, identifyInstruction: identifyFreightDelayInstruction, parseInstruction: parseFreightDelayInstruction } });
     };
 }

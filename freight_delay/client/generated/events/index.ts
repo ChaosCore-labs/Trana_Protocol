@@ -13,3 +13,4 @@ export * from './policyClosed.ts';
 export * from './policyPurchased.ts';
 export * from './policySettled.ts';
 export * from './poolInitialized.ts';
+export * from './rootPosted.ts';

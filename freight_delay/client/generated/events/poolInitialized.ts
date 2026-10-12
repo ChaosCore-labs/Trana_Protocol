@@ -12,18 +12,18 @@ export const POOL_INITIALIZED_EVENT_DISCRIMINATOR: ReadonlyUint8Array = new Uint
 
 export function getPoolInitializedEventDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(POOL_INITIALIZED_EVENT_DISCRIMINATOR); }
 
-export type PoolInitializedEvent = { config: Address; usdcMint: Address; treasury: Address; admin: Address; oracleAuthority: Address; feeBps: number;  };
+export type PoolInitializedEvent = { config: Address; usdcMint: Address; treasury: Address; admin: Address; oracleAuthority: Address; keeper: Address; feeBps: number;  };
 
 export type PoolInitializedEventArgs = PoolInitializedEvent;
 
 /** Gets the encoder for {@link PoolInitializedEventArgs} event data. */
 export function getPoolInitializedEventEncoder(): FixedSizeEncoder<PoolInitializedEventArgs> {
-    return getHiddenPrefixEncoder(getStructEncoder([['config', getAddressEncoder()], ['usdcMint', getAddressEncoder()], ['treasury', getAddressEncoder()], ['admin', getAddressEncoder()], ['oracleAuthority', getAddressEncoder()], ['feeBps', getU16Encoder()]]), [getConstantEncoder(POOL_INITIALIZED_EVENT_DISCRIMINATOR)]);
+    return getHiddenPrefixEncoder(getStructEncoder([['config', getAddressEncoder()], ['usdcMint', getAddressEncoder()], ['treasury', getAddressEncoder()], ['admin', getAddressEncoder()], ['oracleAuthority', getAddressEncoder()], ['keeper', getAddressEncoder()], ['feeBps', getU16Encoder()]]), [getConstantEncoder(POOL_INITIALIZED_EVENT_DISCRIMINATOR)]);
 }
 
 /** Gets the decoder for {@link PoolInitializedEvent} event data. */
 export function getPoolInitializedEventDecoder(): FixedSizeDecoder<PoolInitializedEvent> {
-    return getHiddenPrefixDecoder(getStructDecoder([['config', getAddressDecoder()], ['usdcMint', getAddressDecoder()], ['treasury', getAddressDecoder()], ['admin', getAddressDecoder()], ['oracleAuthority', getAddressDecoder()], ['feeBps', getU16Decoder()]]), [getConstantDecoder(POOL_INITIALIZED_EVENT_DISCRIMINATOR)]);
+    return getHiddenPrefixDecoder(getStructDecoder([['config', getAddressDecoder()], ['usdcMint', getAddressDecoder()], ['treasury', getAddressDecoder()], ['admin', getAddressDecoder()], ['oracleAuthority', getAddressDecoder()], ['keeper', getAddressDecoder()], ['feeBps', getU16Decoder()]]), [getConstantDecoder(POOL_INITIALIZED_EVENT_DISCRIMINATOR)]);
 }
 
 /** Gets the codec for {@link PoolInitializedEvent} event data. */

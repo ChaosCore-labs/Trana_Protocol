@@ -117,7 +117,7 @@ not what releases risk: `buy_policy` requires `expected_delivery > now`,
 is monotonic, so that comparison never blocks a matured policy. But
 `settle_policy` also always verifies a signed arrival — early or late — and the
 attester reports an absent arrival as `null` rather than inventing a timestamp.
-Nothing else in the program can release the payout: its five instructions contain
+Nothing else in the program can release the payout: its six instructions contain
 no timeout, expiry or refund, so `total_locked_risk` only ever falls through a
 settlement.
 

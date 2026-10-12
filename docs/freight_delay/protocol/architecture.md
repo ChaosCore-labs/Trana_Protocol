@@ -155,17 +155,18 @@ is caller-supplied arbitrary.
 ```text
 programs/freight_delay/src/
 ├── lib.rs                           # declare_id!, #[program] mod freight_delay — forwarding only
-├── constants.rs                     # 4 seed literals + FEE_DENOMINATOR
+├── constants.rs                     # 5 seed literals + FEE_DENOMINATOR
 ├── error.rs                         # FreightDelayError — 12 flat variants
-├── events.rs                        # seven events
+├── events.rs                        # eight events
 ├── instructions.rs                  # pub mod + pub use registry
-├── state.rs                         # PoolConfig, LpPosition, Policy
+├── state.rs                         # PoolConfig, LpPosition, Policy, Registry
 └── instructions/
     ├── initialize_pool.rs
     ├── deposit_capital.rs
     ├── buy_policy.rs
     ├── settle_policy.rs
     ├── withdraw_capital.rs
+    ├── post_root.rs
     └── shared.rs                    # attestation verification + transfer_from_treasury
 ```
 

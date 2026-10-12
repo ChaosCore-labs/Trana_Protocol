@@ -1,6 +1,6 @@
 # Accounts & State
 
-Three account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
+Four account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
 one is allocated as `8 + X::INIT_SPACE`, where the leading 8 bytes are Anchor's
 discriminator.
 
@@ -24,6 +24,7 @@ cannot be created — or squatted — by anyone else.
 |---|---|---|---|
 | `admin` | `Pubkey` | 32 | Recorded at init; **never read by any handler** |
 | `oracle_authority` | `Pubkey` | 32 | The attester's raw 32-byte ed25519 public key; the only key whose signature settles a policy |
+| `keeper` | `Pubkey` | 32 | The only key that may `post_root`; immutable after init |
 | `usdc_mint` | `Pubkey` | 32 | The pool's mint; also a seed component |
 | `treasury` | `Pubkey` | 32 | The program-owned token account |
 | `total_capital` | `u64` | 8 | Deposits plus net premiums minus realised payouts |
@@ -32,7 +33,7 @@ cannot be created — or squatted — by anyone else.
 | `total_fees` | `u64` | 8 | Protocol fees accrued; **never decremented** |
 | `fee_bps` | `u16` | 2 | Premium fee in basis points, immutable after init |
 | `bump` | `u8` | 1 | PDA bump |
-| | | **163** | `space = 8 + 163 = 171` |
+| | | **195** | `space = 8 + 195 = 203` |
 
 Two methods live on this struct:
 
@@ -59,6 +60,24 @@ if the invariant were ever violated — the guard fails closed.
 risk — `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital` —
 making full collateralisation a per-instruction re-check rather than a single
 entry gate. `initialize_pool` is the exception: it creates the pool at zero risk.
+
+## `Registry` — a posted history-batch root
+
+Seeds `[b"registry", config, epoch_le]`. One PDA per epoch, written once by the
+keeper (`post_root`), so each batch's root is as permanent as any other account.
+
+| Field | Type | Bytes | Meaning |
+|---|---|---|---|
+| `epoch` | `u64` | 8 | Batch number, part of the seeds |
+| `root` | `[u8; 32]` | 32 | Merkle root over the batch's `PolicyClosed` leaves |
+| `count` | `u64` | 8 | Leaves the root covers |
+| | | **48** | `space = 8 + 48 = 56` |
+
+The program cannot verify a Merkle root on chain, so it does not try: it
+authenticates the poster against `PoolConfig.keeper` and stores the root. Anyone
+holding the batch data can verify a policy's inclusion, so a forged record is
+detectable; a withheld batch is not. The chain's `PolicyClosed` events remain the
+availability backstop, so the off-chain database is rebuildable without the keeper.
 
 ## `LpPosition` — a share balance
 

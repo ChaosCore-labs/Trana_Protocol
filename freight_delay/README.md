@@ -25,14 +25,14 @@ freight_delay/
 ├── programs/freight_delay/
 │   ├── Cargo.toml            # anchor-lang + anchor-spl 1.2.0, LiteSVM dev-deps
 │   ├── src/
-│   │   ├── lib.rs            # #[program] — five instructions, forwarding ctx.bumps
+│   │   ├── lib.rs            # #[program] — six instructions, forwarding ctx.bumps
 │   │   ├── instructions.rs   # flat `pub mod` + `pub use` list
 │   │   ├── instructions/     # one file per instruction: Accounts struct + handler
 │   │   ├── state.rs          # PoolConfig, LpPosition, Policy
 │   │   ├── constants.rs      # the four PDA seeds and FEE_DENOMINATOR
 │   │   ├── error.rs          # Freight DelayError — 12 flat variants
-│   │   └── events.rs         # six events (settle_policy emits two)
-│   └── tests/test_freight_delay.rs  # 22 integration tests (7 more unit tests in shared.rs)
+│   │   └── events.rs         # eight events (settle_policy emits three)
+│   └── tests/test_freight_delay.rs  # 24 integration tests (7 more unit tests in shared.rs)
 ├── client/program.ts         # lifecycle harness over the generated client
 ├── client/generated/         # Codama client generated from target/idl — do not hand-edit
 ├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
@@ -70,7 +70,7 @@ release profile turns on `overflow-checks` with `lto = "fat"` and
 ```bash
 cd freight_delay
 anchor build                  # -> target/deploy/freight_delay.so
-cargo nextest run             # 29 tests — this is Anchor.toml [scripts].test
+cargo nextest run             # 31 tests — this is Anchor.toml [scripts].test
 cargo check --all-targets     # fast type-check loop
 ```
 
@@ -146,7 +146,7 @@ fund its own payout. And every state-mutating handler ends with
 ## Test harness
 
 - **LiteSVM**, not `anchor-client` and not a validator: `litesvm` +
-  `litesvm-token`, with `solana-awesome` re-exports. 22 of the 29 tests live in
+  `litesvm-token`, with `solana-awesome` re-exports. 24 of the 31 tests live in
   `programs/freight_delay/tests/test_freight_delay.rs`; the other 7 are unit tests
   of the ed25519 precompile parsing in `src/instructions/shared.rs`.
 - Each test builds a fresh `LiteSVM` through `setup()`, airdrops four keypairs and
