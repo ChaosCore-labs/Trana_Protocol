@@ -24,19 +24,21 @@ on-chain* — so we run the publisher ourselves.
 | `src/attest.ts` | Source-agnostic glue: fetch → payload → signature. |
 | `src/terminal49-source.ts` | `Terminal49Source`: the real carrier feed, polled over REST. |
 
-`src/terminal49-source.ts` is the real feed: it polls
-`GET /v2/containers/{id}/transport_events` and reads the terminal-arrival
-milestone (`vessel_arrived`, falling back to `vessel_discharged`), ignoring the
-`estimated.*` events. It sits behind the same `ArrivalSource` interface and
-changes nothing on-chain. It needs a Terminal49 API key and no webhook — the
-interface is pull, and the crank decides when to ask.
+**Scope: the arrival data is simulated.** The project ships `SimulatedSource`
+(scripted arrivals, through the identical sign-and-verify path) and nothing else
+is wired into the walkthrough or the crank.
 
-The key goes in `TERMINAL49_API_KEY`: copy `.env.example` to `.env` at the repo
-root (both are handled by `.gitignore`). **Plan gate:** reads need a paid plan.
-Terminal49's free tier permits only *creating* tracking requests — `containers`,
-`shipments` and `transport_events` all answer "You do not have permissions for
-using the API, except for creating tracking requests" (verified against a live
-key). Until reads are available the local demo stays on `SimulatedSource`.
+For real data, `src/terminal49-source.ts` is a ready adapter behind the same
+`ArrivalSource` interface: it polls `GET /v2/containers/{id}/transport_events`,
+reads `vessel_arrived` (falling back to `vessel_discharged`) and skips the
+`estimated.*` events. It is not part of the pilot, and Terminal49's free tier
+cannot run it — reads need a paid plan (only *creating* tracking requests is
+permitted; verified against a live key). Bringing the same data on chain through
+an oracle is the other documented path; either way the program only sees a signed
+payload, so nothing on chain changes.
+
+If you do point it at Terminal49, the key goes in `TERMINAL49_API_KEY` (copy
+`.env.example` to `.env` at the repo root; both are handled by `.gitignore`).
 
 ## Payload layout
 
