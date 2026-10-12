@@ -14,6 +14,8 @@ export const FEE_DENOMINATOR: bigint = 10000n;
 
 export const LP_POSITION_SEED: ReadonlyUint8Array = new Uint8Array([108, 112, 95, 112, 111, 115, 105, 116, 105, 111, 110]);
 
+export const MAX_POLICY_ID_GAP: bigint = 10000n;
+
 export const MAX_SLA_SECONDS: bigint = 31536000n;
 
 export const POLICY_SEED: ReadonlyUint8Array = new Uint8Array([112, 111, 108, 105, 99, 121]);
@@ -21,3 +23,5 @@ export const POLICY_SEED: ReadonlyUint8Array = new Uint8Array([112, 111, 108, 10
 export const REGISTRY_SEED: ReadonlyUint8Array = new Uint8Array([114, 101, 103, 105, 115, 116, 114, 121]);
 
 export const TREASURY_SEED: ReadonlyUint8Array = new Uint8Array([116, 114, 101, 97, 115, 117, 114, 121]);
+
+export const USDC_DECIMALS: number = 6;

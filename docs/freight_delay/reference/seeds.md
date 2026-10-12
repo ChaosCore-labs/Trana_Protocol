@@ -1,6 +1,6 @@
 # PDA Seeds & Constants
 
-Every address the program derives comes from six literals in `constants.rs`.
+Every address the program derives comes from the seed literals in `constants.rs`.
 Matching these exactly is mandatory for any client — a wrong seed produces a
 valid-looking but wrong account.
 
@@ -24,14 +24,20 @@ pub const REGISTRY_SEED: &[u8] = b"registry";
 #[constant]
 pub const FEE_DENOMINATOR: u64 = 10_000;
 
-/// Longest SLA the program will quote, measured from the current time.
-///
-/// Without a bound a policy can name a deadline the clock can never reach
-/// (`i64::MAX`), and `settle_policy`'s maturity gate (`now >= deadline`) then
-/// makes its locked risk unreleasable by anyone — including the attester
-/// (pre-freeze audit: unreachable deadline).
+/// Bound on where a policy's deadline (`expected_delivery + grace_period`) may
+/// land, measured from purchase. An unreachable deadline makes the payout
+/// unreleasable, and there is no timeout.
 #[constant]
 pub const MAX_SLA_SECONDS: i64 = 365 * 24 * 60 * 60;
+
+/// Decimals the settlement mint must use: every amount in this program is USDC.
+#[constant]
+pub const USDC_DECIMALS: u8 = 6;
+
+/// How far ahead of a pool's counter a buyer may place a `policy_id`: room for
+/// concurrent quotes to pick distinct ids, far too narrow to spend a u64.
+#[constant]
+pub const MAX_POLICY_ID_GAP: u64 = 10_000;
 ```
 
 These are declared with `#[constant]` rather than bare `pub const` so they are

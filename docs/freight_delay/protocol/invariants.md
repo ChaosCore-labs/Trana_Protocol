@@ -147,8 +147,9 @@ a true one.
 
 **Locked risk is permanent unless an attestation arrives.** An earlier version of
 this page claimed the opposite, so it is worth stating exactly. The deadline is
-not what releases risk: `buy_policy` requires `expected_delivery > now`
-and no further than `MAX_SLA_SECONDS` ahead, `settle_policy` requires
+not what releases risk: `buy_policy` requires the deadline
+(`expected_delivery + grace_period`) to be in the future and inside
+`MAX_SLA_SECONDS`, `settle_policy` requires
 `now >= expected_delivery + grace_period`, and the clock is monotonic, so a
 policy's deadline is always reachable and that comparison never blocks a matured
 policy. But
@@ -174,10 +175,12 @@ payout rather than covering a gap.
 on chain: because a delay can only be as large as the transit itself, and ocean
 transit runs roughly 15–40 days depending on the corridor, a `grace_period` that
 approaches the route's transit time makes a policy that can practically never
-trigger. `buy_policy` accepts any non-negative grace period and any future
-`expected_delivery`, so this is a product-parameter question rather than a
-program invariant — but a grace period chosen without reference to the route
-sells a policy that is very unlikely to pay.
+trigger. `buy_policy` bounds the deadline — quote plus slack — to
+`MAX_SLA_SECONDS`, so the slack is always inside what the program can reach, but
+nothing checks it against the corridor: a grace period chosen without reference
+to the route sells a policy that is very unlikely to pay, and ties up the
+collateral it reserves for that whole window. A product-parameter question, not a
+program invariant.
 
 **Fee value.** Fees accrue to `total_fees` and are excluded from LP claims and
 from `free_capital`. They are also unwithdrawable by any instruction, so the

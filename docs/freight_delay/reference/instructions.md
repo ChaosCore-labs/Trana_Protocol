@@ -9,7 +9,7 @@ instruction.
 | Account | Flags | Constraints |
 |---|---|---|
 | `admin` | `mut`, signer | Pays for both account creations |
-| `usdc_mint` | read | — |
+| `usdc_mint` | read | `decimals == 6` — every amount is a USDC base unit |
 | `oracle_authority` | signer | The attester whose key seeds the config — it must sign |
 | `config` | `mut`, **init** | `seeds = [config, usdc_mint, oracle_authority]`, `space = 8 + PoolConfig::INIT_SPACE` |
 | `treasury` | **init** | `seeds = [treasury, config]`, `token::mint = usdc_mint`, `token::authority = config` |

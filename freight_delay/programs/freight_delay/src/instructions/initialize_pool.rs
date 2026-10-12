@@ -7,6 +7,9 @@ use crate::{constants::*, error::FreightDelayError, events::PoolInitialized, sta
 pub struct InitializePool<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
+    #[account(
+        constraint = usdc_mint.decimals == USDC_DECIMALS @ FreightDelayError::InvalidMint,
+    )]
     pub usdc_mint: Account<'info, Mint>,
     /// The config address includes this key, so it must sign: nobody else can
     /// create — or squat — a given attester's pool.

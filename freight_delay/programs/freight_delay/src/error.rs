@@ -8,7 +8,7 @@ pub enum FreightDelayError {
     InvalidFee,
     #[msg("Amount must be greater than zero.")]
     InvalidAmount,
-    #[msg("Expected delivery must be in the future and within the maximum SLA horizon, and grace period non-negative, with a representable deadline.")]
+    #[msg("Expected delivery plus grace period must lie in the future and within the maximum SLA horizon.")]
     InvalidDeadline,
     #[msg("Pool is insolvent: locked risk would exceed total capital.")]
     Insolvent,
@@ -26,6 +26,8 @@ pub enum FreightDelayError {
     MathOverflow,
     #[msg("Delivery attestation signature is missing or invalid.")]
     AttestationRejected,
-    #[msg("Policy id must be greater than the last one issued for this pool.")]
+    #[msg("Policy id must be greater than the last one issued for this pool, and within the id window.")]
     InvalidPolicyId,
+    #[msg("Mint must use 6 decimals.")]
+    InvalidMint,
 }
