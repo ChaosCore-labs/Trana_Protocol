@@ -38,9 +38,8 @@ export type InitializePoolAsyncInput<TAccountAdmin extends InstructionSignerInpu
   admin: TAccountAdmin;
 usdcMint: TAccountUsdcMint;
 /**
- * The attester, and the pool's identity. It must sign: the config address
- * includes this key, so nobody else can create — or squat — the pool
- * belonging to a given attester.
+ * The config address includes this key, so it must sign: nobody else can
+ * create — or squat — a given attester's pool.
  */
 oracleAuthority: TAccountOracleAuthority;
 config?: TAccountConfig;
@@ -88,9 +87,8 @@ export type InitializePoolInput<TAccountAdmin extends InstructionSignerInput = I
   admin: TAccountAdmin;
 usdcMint: TAccountUsdcMint;
 /**
- * The attester, and the pool's identity. It must sign: the config address
- * includes this key, so nobody else can create — or squat — the pool
- * belonging to a given attester.
+ * The config address includes this key, so it must sign: nobody else can
+ * create — or squat — a given attester's pool.
  */
 oracleAuthority: TAccountOracleAuthority;
 config: TAccountConfig;
@@ -133,9 +131,8 @@ accounts: {
 admin: TAccountMetas[0];
 usdcMint: TAccountMetas[1];
 /**
- * The attester, and the pool's identity. It must sign: the config address
- * includes this key, so nobody else can create — or squat — the pool
- * belonging to a given attester.
+ * The config address includes this key, so it must sign: nobody else can
+ * create — or squat — a given attester's pool.
  */
 oracleAuthority: TAccountMetas[2];
 config: TAccountMetas[3];

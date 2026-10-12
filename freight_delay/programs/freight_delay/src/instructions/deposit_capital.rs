@@ -60,8 +60,8 @@ impl<'info> DepositCapital<'info> {
         };
         require_neq!(shares, 0, FreightDelayError::InvalidAmount);
 
-        // `init_if_needed` zero-fills a freshly created position, so a default
-        // `lp` distinguishes first deposit from a repeat deposit.
+        // `init_if_needed` zero-fills a new position, so a default `lp` marks the
+        // first deposit.
         if self.lp_position.lp == Pubkey::default() {
             self.lp_position.lp = self.lp.key();
             self.lp_position.bump = bumps.lp_position;

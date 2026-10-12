@@ -19,19 +19,11 @@ export type SettlePolicyInstruction<TProgram extends string = typeof FREIGHT_DEL
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountCrank extends string ? WritableSignerAccount<TAccountCrank> & AccountSignerMeta<TAccountCrank> : TAccountCrank, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountUsdcMint extends string ? ReadonlyAccount<TAccountUsdcMint> : TAccountUsdcMint, TAccountTreasury extends string ? WritableAccount<TAccountTreasury> : TAccountTreasury, TAccountPolicy extends string ? WritableAccount<TAccountPolicy> : TAccountPolicy, TAccountInsured extends string ? WritableAccount<TAccountInsured> : TAccountInsured, TAccountInsuredUsdc extends string ? WritableAccount<TAccountInsuredUsdc> : TAccountInsuredUsdc, TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, ...TRemainingAccounts]>;
 
 export type SettlePolicyInstructionData = { discriminator: ReadonlyUint8Array; shipmentId: bigint; 
-/**
- * The attested **destination-terminal arrival**, unix seconds: the event a
- * carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
- * delivery (CHA-33).
- */
+/** Attested destination-terminal arrival, unix seconds. */
 actualDelivery: bigint; terminalCode: bigint; nonce: bigint; signature: ReadonlyUint8Array;  };
 
 export type SettlePolicyInstructionDataArgs = { shipmentId: number | bigint; 
-/**
- * The attested **destination-terminal arrival**, unix seconds: the event a
- * carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
- * delivery (CHA-33).
- */
+/** Attested destination-terminal arrival, unix seconds. */
 actualDelivery: number | bigint; terminalCode: number | bigint; nonce: number | bigint; signature: ReadonlyUint8Array;  };
 
 export function getSettlePolicyInstructionDataEncoder(): FixedSizeEncoder<SettlePolicyInstructionDataArgs> {
@@ -52,10 +44,7 @@ config: TAccountConfig;
 usdcMint: TAccountUsdcMint;
 treasury?: TAccountTreasury;
 policy: TAccountPolicy;
-/**
- * The shipper's wallet: where the closed policy's rent goes. Pinned to the
- * account the policy names, so the rent cannot be redirected.
- */
+/** Where the closed policy's rent goes, pinned to the account the policy names. */
 insured: TAccountInsured;
 insuredUsdc: TAccountInsuredUsdc;
 instructions?: TAccountInstructions;
@@ -103,10 +92,7 @@ config: TAccountConfig;
 usdcMint: TAccountUsdcMint;
 treasury: TAccountTreasury;
 policy: TAccountPolicy;
-/**
- * The shipper's wallet: where the closed policy's rent goes. Pinned to the
- * account the policy names, so the rent cannot be redirected.
- */
+/** Where the closed policy's rent goes, pinned to the account the policy names. */
 insured: TAccountInsured;
 insuredUsdc: TAccountInsuredUsdc;
 instructions?: TAccountInstructions;
@@ -152,10 +138,7 @@ config: TAccountMetas[1];
 usdcMint: TAccountMetas[2];
 treasury: TAccountMetas[3];
 policy: TAccountMetas[4];
-/**
- * The shipper's wallet: where the closed policy's rent goes. Pinned to the
- * account the policy names, so the rent cannot be redirected.
- */
+/** Where the closed policy's rent goes, pinned to the account the policy names. */
 insured: TAccountMetas[5];
 insuredUsdc: TAccountMetas[6];
 instructions: TAccountMetas[7];

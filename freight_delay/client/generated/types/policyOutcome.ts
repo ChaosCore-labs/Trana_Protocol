@@ -8,7 +8,6 @@
 
 import { combineCodec, getEnumDecoder, getEnumEncoder, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder } from '@solana/kit';
 
-/** The settled outcome of a policy, frozen into the `PolicyClosed` terminal event. */
 export enum PolicyOutcome { PaidLate, ClosedOnTime }
 
 export type PolicyOutcomeArgs = PolicyOutcome;

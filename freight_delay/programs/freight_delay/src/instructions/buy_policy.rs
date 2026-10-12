@@ -63,9 +63,8 @@ impl<'info> BuyPolicy<'info> {
         let now = Clock::get()?.unix_timestamp;
         require!(expected_delivery > now, FreightDelayError::InvalidDeadline);
         require!(grace_period >= 0, FreightDelayError::InvalidDeadline);
-        // A deadline the clock can never reach would lock the payout for good:
-        // the maturity gate is `now >= deadline` and there is no timeout path
-        // (pre-freeze audit: unreachable deadline).
+        // No timeout path exists, so a deadline the clock cannot reach would lock
+        // the payout for good.
         let horizon = now
             .checked_add(MAX_SLA_SECONDS)
             .ok_or(FreightDelayError::InvalidDeadline)?;
@@ -73,15 +72,13 @@ impl<'info> BuyPolicy<'info> {
             expected_delivery <= horizon,
             FreightDelayError::InvalidDeadline
         );
-        // The deadline is recomputed at settlement, so an unrepresentable sum
-        // would make the policy unsettleable and lock its collateral for good.
+        // Settlement recomputes this sum, so an unrepresentable one is unsettleable.
         require!(
             expected_delivery.checked_add(grace_period).is_some(),
             FreightDelayError::InvalidDeadline
         );
-        // Ids strictly increase and are never reused. `nonce` is the policy id, so
-        // a repeated id would let an attestation signed for a closed policy settle
-        // a new one on the same shipment (CHA-18).
+        // `nonce` is the policy id, so a reused id would let an attestation signed
+        // for a closed policy settle a new one.
         require!(
             policy_id > self.config.last_policy_id,
             FreightDelayError::InvalidPolicyId

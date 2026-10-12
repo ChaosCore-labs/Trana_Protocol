@@ -8,9 +8,8 @@ pub struct InitializePool<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     pub usdc_mint: Account<'info, Mint>,
-    /// The attester, and the pool's identity. It must sign: the config address
-    /// includes this key, so nobody else can create — or squat — the pool
-    /// belonging to a given attester.
+    /// The config address includes this key, so it must sign: nobody else can
+    /// create — or squat — a given attester's pool.
     pub oracle_authority: Signer<'info>,
     #[account(
         init,
@@ -40,9 +39,8 @@ impl<'info> InitializePool<'info> {
         keeper: Pubkey,
         bumps: InitializePoolBumps,
     ) -> Result<()> {
-        // Below the denominator, not at it: a 100% fee floors `net_premium` to
-        // zero, and a pool whose capital can reach zero can never be deposited
-        // into again — share pricing divides by it.
+        // A 100% fee floors `net_premium` to zero, and a pool that reaches zero
+        // capital can never be deposited into again — share pricing divides by it.
         require!(
             (fee_bps as u64) < FEE_DENOMINATOR,
             FreightDelayError::InvalidFee

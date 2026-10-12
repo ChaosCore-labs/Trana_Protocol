@@ -79,11 +79,9 @@ impl<'info> WithdrawCapital<'info> {
             .checked_sub(amount)
             .ok_or(FreightDelayError::MathOverflow)?;
 
-        // A pool with shares outstanding has to keep some capital free, or the next
-        // triggered settlement takes `total_capital` to exactly zero and both pricing
-        // divisions die on it — the pool could never be deposited into or redeemed
-        // again (pre-freeze audit: zero-capital brick). A full exit is exempt: `total_shares == 0`
-        // means there is nobody left to strand.
+        // Shares outstanding must leave free capital behind, or the next triggered
+        // settlement takes `total_capital` to zero and both pricing divisions die on
+        // it. A full exit is exempt: nobody is left to strand.
         require!(
             self.config.total_shares == 0 || self.config.free_capital() > 0,
             FreightDelayError::InsufficientFreeCapital
@@ -108,9 +106,8 @@ impl<'info> WithdrawCapital<'info> {
             total_capital: self.config.total_capital,
         });
 
-        // A position with no shares left is dead weight: close it and return the
-        // rent to the LP. `deposit_capital` recreates it via `init_if_needed`, so
-        // an LP that comes back gets a fresh position at the same address.
+        // No shares left: close the position and return the rent; `init_if_needed`
+        // recreates it on the next deposit.
         if self.lp_position.shares == 0 {
             self.lp_position.close(self.lp.to_account_info())?;
         }

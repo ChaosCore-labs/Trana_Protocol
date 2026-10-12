@@ -5,28 +5,21 @@ use solana_sdk_ids::ed25519_program;
 
 use crate::{constants::CONFIG_SEED, error::FreightDelayError, state::PoolConfig};
 
-/// The signed delivery attestation produced off-chain by the attester.
-///
-/// Field order and width are the contract with `attester/src/payload.ts`. Any
-/// change here is breaking on both sides.
+/// The signed delivery attestation. Field order and width are the byte contract
+/// with `attester/src/payload.ts`: changing them breaks both sides.
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct DeliveryAttestation {
     pub shipment_id: u64,
-    /// The attested **destination-terminal arrival**, unix seconds: the event a
-    /// carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
-    /// delivery (CHA-33).
+    /// Attested destination-terminal arrival, unix seconds.
     pub actual_delivery: i64,
     pub terminal_code: u64,
     pub nonce: u64,
 }
 
 impl DeliveryAttestation {
-    /// The canonical 64-byte message the attester signs: the pool it is for,
-    /// then the delivery fields.
-    ///
-    /// Binding the pool is what keeps a signature single-pool: `nonce` alone
-    /// bounds replay within one pool, because the id it must match is chosen by
-    /// the buyer, and every pool's ids start from the same space.
+    /// The 64-byte message the attester signs. The pool is bound because `nonce`
+    /// alone is not: its value is chosen by the buyer, and every pool's ids start
+    /// from the same space.
     pub fn to_message(&self, pool: &Pubkey) -> [u8; 64] {
         let mut buf = [0u8; 64];
         buf[0..32].copy_from_slice(pool.as_ref());
@@ -38,12 +31,9 @@ impl DeliveryAttestation {
     }
 }
 
-/// Verify an ed25519 signature over `message` by `attester_pubkey`, requiring
-/// the signature to also appear as an ed25519 precompile instruction earlier in
-/// this same transaction.
-///
-/// Not a replay guard: the precompile is deterministic, so the same bytes pass
-/// this scan again in a later transaction. The `nonce` stops replay.
+/// Require `signature` over `message` by `attester_pubkey` to also appear as an
+/// ed25519 precompile instruction earlier in this transaction. Not a replay guard
+/// — the precompile is deterministic; the `nonce` is.
 pub fn verify_ed25519_attestation(
     instructions_sysvar: &AccountInfo,
     attester_pubkey: &[u8; 32],
@@ -72,23 +62,14 @@ pub fn verify_ed25519_attestation(
     Ok(())
 }
 
-/// Does this ed25519 precompile instruction carry exactly our key, message and
-/// signature, inline rather than by reference?
-///
-/// Header offsets, all u16 LE into this instruction's own data:
-///   [2] signature_offset  [4] signature_instruction_index
-///   [6] public_key_offset [8] public_key_instruction_index
-///   [10] message_offset   [12] message_size
-///   [14] message_instruction_index
-///
-/// An instruction index of 0xFFFF means "inline in this instruction".
+/// Does this precompile instruction carry exactly our key, message and signature,
+/// all inline rather than by reference? `data[0]` is the signature count.
 fn ed25519_ix_matches(
     data: &[u8],
     pubkey: &[u8; 32],
     message: &[u8],
     signature: &[u8; 64],
 ) -> bool {
-    /// `0xFFFF` marks data carried inline in the precompile instruction itself.
     const SELF: u16 = 0xFFFF;
     const HEADER: usize = 16;
 
@@ -122,12 +103,8 @@ fn ed25519_ix_matches(
     }
 }
 
-/// Transfers `amount` out of the pool treasury, signed by the `PoolConfig` PDA.
-///
-/// `transfer_checked` (not bare `transfer`): the mint and its decimals are
-/// passed explicitly, so the token program verifies the mint against both token
-/// accounts. This is the top-program floor auditors expect and the prerequisite
-/// for a future Token-2022 USDC.
+/// Moves `amount` out of the treasury, signed by the `PoolConfig` PDA.
+/// `transfer_checked` so the token program checks the mint on both accounts.
 pub fn transfer_from_treasury<'info>(
     token_program: &Program<'info, Token>,
     mint: &Account<'info, Mint>,
@@ -164,10 +141,8 @@ pub fn transfer_from_treasury<'info>(
 mod tests {
     use super::*;
 
-    /// A precompile payload with the given `message_instruction_index`.
-    ///
-    /// These tests build malformed headers on purpose, so the real encoder
-    /// cannot be used here.
+    /// A precompile payload with the given `message_instruction_index`. Built by
+    /// hand: these tests need malformed headers the real encoder cannot produce.
     fn precompile_data(msg_ix: u16) -> Vec<u8> {
         let pubkey = [1u8; 32];
         let signature = [2u8; 64];

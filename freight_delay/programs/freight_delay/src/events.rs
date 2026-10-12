@@ -33,9 +33,6 @@ pub struct PolicyPurchased {
     pub premium_amount: u64,
 }
 
-/// Emitted by `settle_policy` for every settlement: the attested fact that
-/// resolved the policy. No `reporter` field — the evidence is the signature,
-/// not a wallet identity.
 #[event]
 pub struct DeliveryAttested {
     pub config: Pubkey,
@@ -58,21 +55,14 @@ pub struct PolicySettled {
     pub grace_period: i64,
 }
 
-/// The settled outcome of a policy, frozen into the `PolicyClosed` terminal event.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PolicyOutcome {
-    /// Arrived past the deadline: the shipper was paid.
     PaidLate,
-    /// Arrived within the deadline plus grace: the risk was released unpaid.
     ClosedOnTime,
 }
 
-/// The terminal event for a policy, emitted immediately before its PDA is closed
-/// and the rent returned to the shipper (CHA-18).
-///
-/// Carries the full terms, so a policy's lifecycle stays reconstructible from
-/// events alone once the account is gone: this is the leaf format for the
-/// off-chain history batches, and the chain log is the availability backstop.
+/// Terminal event, emitted immediately before the policy PDA is closed. Carries
+/// the full terms, so the lifecycle outlives the account that held them.
 #[event]
 pub struct PolicyClosed {
     pub config: Pubkey,
@@ -98,9 +88,6 @@ pub struct CapitalWithdrawn {
     pub total_capital: u64,
 }
 
-/// Emitted when the keeper posts a history-batch root (CHA-18). The root is the
-/// integrity half of the archive; the `PolicyClosed` events are the
-/// availability half, and they stay in chain history permanently.
 #[event]
 pub struct RootPosted {
     pub config: Pubkey,

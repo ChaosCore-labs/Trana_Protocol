@@ -12,33 +12,21 @@ export const POLICY_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([222, 135
 
 export function getPolicyDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(POLICY_DISCRIMINATOR); }
 
-export type Policy = { discriminator: ReadonlyUint8Array; insured: Address; policyId: bigint; 
-/** Bill of lading / container identifier, matched against a settlement attestation. */
-shipmentId: bigint; 
-/**
- * SLA timestamp the shipment was quoted: the **destination-terminal arrival**
- * the attester measures against, not a door-delivery time (CHA-33).
- */
+export type Policy = { discriminator: ReadonlyUint8Array; insured: Address; policyId: bigint; shipmentId: bigint; 
+/** The destination-terminal arrival the SLA is measured against. */
 expectedDelivery: bigint; 
 /**
- * Slack after `expected_delivery` before a late arrival triggers a payout.
- * Not bounded on chain: a grace period approaching the corridor's transit
- * time sells a policy that can practically never trigger.
+ * Unbounded on chain: a grace period near the corridor's transit time sells a
+ * policy that can practically never trigger and ties up its collateral.
  */
 gracePeriod: bigint; payoutAmount: bigint; premiumAmount: bigint; isSettled: boolean; isPaid: boolean; bump: number;  };
 
-export type PolicyArgs = { insured: Address; policyId: number | bigint; 
-/** Bill of lading / container identifier, matched against a settlement attestation. */
-shipmentId: number | bigint; 
-/**
- * SLA timestamp the shipment was quoted: the **destination-terminal arrival**
- * the attester measures against, not a door-delivery time (CHA-33).
- */
+export type PolicyArgs = { insured: Address; policyId: number | bigint; shipmentId: number | bigint; 
+/** The destination-terminal arrival the SLA is measured against. */
 expectedDelivery: number | bigint; 
 /**
- * Slack after `expected_delivery` before a late arrival triggers a payout.
- * Not bounded on chain: a grace period approaching the corridor's transit
- * time sells a policy that can practically never trigger.
+ * Unbounded on chain: a grace period near the corridor's transit time sells a
+ * policy that can practically never trigger and ties up its collateral.
  */
 gracePeriod: number | bigint; payoutAmount: number | bigint; premiumAmount: number | bigint; isSettled: boolean; isPaid: boolean; bump: number;  };
 

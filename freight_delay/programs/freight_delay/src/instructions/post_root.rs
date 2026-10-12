@@ -7,11 +7,9 @@ use crate::{
     state::{PoolConfig, Registry},
 };
 
-/// Post one history-batch root (CHA-18). Keeper-signed, one `Registry` PDA per
-/// epoch. The program cannot verify a Merkle root on chain, so it does not try:
-/// it authenticates the poster and stores the root, and anyone holding the batch
-/// data can check inclusion against it. A withheld batch stays undetectable —
-/// the residual trust assumption the issue accepts.
+/// Keeper-signed, one `Registry` PDA per epoch. The program cannot verify a Merkle
+/// root on chain, so it authenticates the poster and stores the root; anyone with
+/// the batch data can prove inclusion. A withheld batch stays undetectable.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct PostRoot<'info> {

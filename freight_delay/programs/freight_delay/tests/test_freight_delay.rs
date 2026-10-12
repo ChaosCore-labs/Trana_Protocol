@@ -455,9 +455,7 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
 
 #[test]
 fn buy_policy_rejects_a_deadline_beyond_the_sla_horizon() {
-    // A deadline the clock cannot reach makes the policy unsettleable for good:
-    // the maturity gate is `now >= deadline` and there is no timeout (pre-freeze audit:
-    // unreachable deadline).
+    // No timeout exists, so a deadline the clock cannot reach is unsettleable for good.
     let mut env = funded_pool(1_000_000 * UNIT);
     let horizon = BASE_TS + freight_delay::MAX_SLA_SECONDS;
 
@@ -480,9 +478,8 @@ fn buy_policy_requires_a_strictly_increasing_policy_id() {
 
 #[test]
 fn buy_policy_rejects_reusing_a_closed_policy_id() {
-    // `nonce` is the policy id, so a reused id would let a stale attestation
-    // settle a policy it was not signed for. Closing the PDA frees the address;
-    // the monotonic guard is what keeps the id spent (CHA-18).
+    // `nonce` is the policy id and closing the PDA frees the address, so the
+    // monotonic guard is what keeps a spent id spent.
     let mut env = funded_pool(1_000_000 * UNIT);
     assert!(buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
 
@@ -503,11 +500,8 @@ fn buy_policy_rejects_reusing_a_closed_policy_id() {
 
 #[test]
 fn withdraw_cannot_strand_shares_with_zero_capital() {
-    // Pre-freeze audit, zero-capital brick: withdrawing the last unit of free capital
-    // while a payout is still
-    // locked lets the next triggered settlement drive `total_capital` to zero, and
-    // both pricing divisions then fail — the pool can never be deposited into or
-    // redeemed again. The redemption that would do it is now refused.
+    // Redeeming the last free unit while a payout is locked would let the next
+    // settlement drive `total_capital` to zero, which both pricing paths divide by.
     let capital = 100 * UNIT;
     let mut env = funded_pool(capital);
     assert!(buy_policy(&mut env, 1, 99 * UNIT, 100 * UNIT, BASE_TS + SLA_DELTA).is_ok());
@@ -533,11 +527,9 @@ fn withdraw_cannot_strand_shares_with_zero_capital() {
 }
 
 
-/// The pre-freeze audit's own brick reproduction, replayed step for step with the
-/// zero-fee pool it used: deposit, write a payout the free capital exactly covers,
-/// redeem that free capital, settle. Before the fix the redemption emptied the free
-/// capital and the settle took `total_capital` to exactly zero with shares still
-/// outstanding — the pool was dead for good. It must now be refused.
+/// The brick sequence on a zero-fee pool, step for step: deposit, write a payout the
+/// free capital exactly covers, redeem that free capital, settle. The redemption is
+/// refused now, so the payout cannot zero the pool.
 #[test]
 fn the_original_brick_sequence_is_refused() {
     let capital = 100 * UNIT;
@@ -552,8 +544,7 @@ fn the_original_brick_sequence_is_refused() {
     assert_eq!(bought.total_shares, 100 * UNIT);
     assert_eq!(bought.free_capital(), 100 * UNIT);
 
-    // 50 shares price at exactly the 100 USDC that is still free: this is the
-    // attack step, and it is refused.
+    // 50 shares price at exactly the 100 USDC still free: the attack step, refused.
     assert!(withdraw_capital(&mut env, 50 * UNIT).is_err());
 
     // One unit less leaves capital free, and the pool absorbs its payout.
@@ -566,8 +557,7 @@ fn the_original_brick_sequence_is_refused() {
     assert_eq!(settled.total_locked_risk, 0);
     assert_eq!(settled.total_shares, 51 * UNIT);
 
-    // The point of the fix: the pool is still alive, so both pricing divisions
-    // still have a non-zero denominator.
+    // The fix's point: both pricing denominators stay non-zero.
     assert!(deposit_capital(&mut env, UNIT).is_ok());
     assert!(withdraw_capital(&mut env, 2 * UNIT).is_ok());
 }
@@ -712,8 +702,7 @@ fn buy_policy_rejects_an_unrepresentable_deadline() {
 
 #[test]
 fn settle_emits_the_attested_delivery() {
-    // The on-chain record of what the oracle attested. Replaces the old
-    // DeliveryReport account: same fact, no rent, no write-once slot.
+    // The on-chain record of what the oracle attested.
     let mut env = funded_pool(1_000_000 * UNIT);
     assert!(
         buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()
@@ -974,9 +963,8 @@ fn withdraw_rejects_unknown_position() {
 
 #[test]
 fn settle_rejects_an_attestation_signed_by_a_stranger() {
-    // The only thing that makes an attestation authoritative is the key that
-    // signed it. A well-formed, correctly-nonced attestation from any other key
-    // must not move pool money.
+    // Only the oracle's key makes an attestation authoritative: the same bytes from
+    // another key must not move money.
     let mut env = funded_pool(1_000_000 * UNIT);
     assert!(
         buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok()

@@ -9,7 +9,6 @@ use crate::{
     state::{Policy, PoolConfig},
 };
 
-/// Instruction sysvar address, used to bind an attestation to this transaction.
 const INSTRUCTIONS_ID: Pubkey = solana_instructions_sysvar::ID;
 
 #[derive(Accounts)]
@@ -37,8 +36,7 @@ pub struct SettlePolicy<'info> {
         bump = policy.bump,
     )]
     pub policy: Account<'info, Policy>,
-    /// The shipper's wallet: where the closed policy's rent goes. Pinned to the
-    /// account the policy names, so the rent cannot be redirected.
+    /// Where the closed policy's rent goes, pinned to the account the policy names.
     #[account(
         mut,
         constraint = insured.key() == policy.insured @ FreightDelayError::Unauthorized,
@@ -77,8 +75,7 @@ impl<'info> SettlePolicy<'info> {
             FreightDelayError::PolicyNotMature
         );
 
-        // The nonce is the replay bound: a signature can only ever settle the one
-        // policy it was minted for.
+        // The nonce is the replay bound: one signature, one policy.
         require!(
             attestation.shipment_id == self.policy.shipment_id,
             FreightDelayError::DeliveryMismatch
@@ -126,8 +123,6 @@ impl<'info> SettlePolicy<'info> {
         self.policy.is_settled = true;
         self.config.assert_solvent()?;
 
-        // The on-chain record of what the oracle attested, emitted for every
-        // settlement so the delivery history is reconstructible off-chain.
         emit!(DeliveryAttested {
             config: self.config.key(),
             policy: self.policy.key(),
@@ -168,9 +163,8 @@ impl<'info> SettlePolicy<'info> {
             decided_at_slot: clock.slot,
         });
 
-        // The policy is done: close the PDA and return the rent to the shipper.
-        // `PolicyClosed` above is the durable record; the account was only ever
-        // live state (CHA-18).
+        // Done: close the PDA and return the rent. `PolicyClosed` above is the
+        // durable record.
         self.policy.close(self.insured.to_account_info())?;
 
         Ok(())
