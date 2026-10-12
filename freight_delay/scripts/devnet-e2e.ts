@@ -12,6 +12,10 @@
  *   anchor deploy --provider.cluster devnet
  *   bun run devnet-e2e
  *
+ * The USDC in this run is demo money: a 6-decimal token the script mints for
+ * itself, with no value, no faucet and no relation to Circle's USDC. Every run
+ * creates a fresh mint, so no run touches anyone else's balances.
+ *
  * Env: DEVNET_KEYPAIR (default `~/.config/solana/id.json`) pays for everything.
  */
 
@@ -68,9 +72,15 @@ const explorer = (path: string) => `https://explorer.solana.com/${path}?cluster=
 
 let failures = 0;
 const check = (label: string, ok: boolean) => {
-  console.log(`    ${ok ? "ok  " : "FAIL"}  ${label}`);
+  console.log(`    ${ok ? green("ok  ") : red("FAIL")}  ${label}`);
   if (!ok) failures++;
 };
+const paint = (code: string, text: string) => `\x1b[${code}m${text}\x1b[0m`;
+const green = (t: string) => paint("32;1", t);
+const red = (t: string) => paint("31;1", t);
+const cyan = (t: string) => paint("36;1", t);
+const dim = (t: string) => paint("2", t);
+
 const usdc = (v: bigint) =>
   `${(Number(v) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2 })} USDC`;
 
@@ -91,16 +101,18 @@ const client = await createClient()
   .use(solanaDevnetRpc({ rpcUrl, maxConcurrency: 1 }));
 
 /** Sends with backoff: the public devnet RPC throttles bursts with HTTP 429, and a
- * refused request submits nothing, so a retry cannot double-apply. */
+ * throttled simulation surfaces as a failed compute-unit estimate. Either way nothing was
+ * submitted, so a retry cannot double-apply. */
 async function send(ixs: Parameters<typeof client.sendTransaction>[0]) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await client.sendTransaction(ixs);
     } catch (e) {
       const message = String((e as Error)?.message ?? e);
-      if (!/429|Too Many Requests|rate limit/i.test(message) || attempt >= 8) throw e;
+      const transient = /429|Too Many Requests|rate limit|Failed to estimate the compute unit/i;
+      if (!transient.test(message) || attempt >= 8) throw e;
       const backoffMs = Math.min(20_000, 1_000 * 2 ** (attempt - 1));
-      console.log(`    … devnet rpc busy, retrying in ${backoffMs / 1000}s (attempt ${attempt})`);
+      console.log(dim(`    … devnet rpc busy, retrying in ${backoffMs / 1000}s (attempt ${attempt})`));
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
@@ -159,7 +171,7 @@ const h: Harness = { client, programId, admin, usdcMint: usdcMint.address, confi
 
 // -------------------------------------------------------------------- stage 0
 
-console.log("\nstage 0 — test USDC mint on devnet");
+console.log(cyan("\nstage 0 — test USDC mint on devnet (self-minted, valueless — not real USDC)"));
 await send([
   getCreateAccountInstruction({
     payer: admin,
@@ -191,11 +203,11 @@ for (const [who, amount] of [
   });
   await send(flattenInstructionPlan(plan));
 }
-check("test USDC minted to LP and shipper", true);
+check("test USDC minted to LP and shipper (demo money, holds no value)", true);
 
 // -------------------------------------------------------------------- stage 1
 
-console.log("\nstage 1 — initialize_pool");
+console.log(cyan("\nstage 1 — initialize_pool"));
 await send([initializePool(h, FEE_BPS, attester, admin.address)]);
 let pool = await readPool(h);
 report("after initialize_pool", pool);
@@ -205,7 +217,7 @@ check("oracle_authority is the attester", pool.oracleAuthority === ATTESTER_ADDR
 
 // -------------------------------------------------------------------- stage 2
 
-console.log("\nstage 2 — deposit_capital");
+console.log(cyan("\nstage 2 — deposit_capital"));
 await send([await depositCapital(h, lp, DEPOSIT)]);
 pool = await readPool(h);
 report("after deposit_capital", pool);
@@ -214,7 +226,7 @@ check("shares minted 1:1", pool.totalShares === DEPOSIT);
 
 // -------------------------------------------------------------------- stage 3
 
-console.log("\nstage 3 — buy_policy (deadline 30s out, on the real clock)");
+console.log(cyan("\nstage 3 — buy_policy (deadline 30s out, on the real clock)"));
 const expectedDelivery = (await chainNow()) + QUOTE_AHEAD;
 const deadline = expectedDelivery;
 check("quote is in the future", expectedDelivery > (await chainNow()));
@@ -246,7 +258,7 @@ console.log(`  deadline ${new Date(Number(deadline) * 1000).toISOString()}`);
 
 // -------------------------------------------------------------------- stage 4
 
-console.log("\nstage 4 — wait for the devnet clock, then settle both policies");
+console.log(cyan("\nstage 4 — wait for the devnet clock, then settle both policies"));
 const reached = await waitForClock(deadline);
 check(`cluster clock reached the deadline (now ${reached})`, reached >= deadline);
 
@@ -283,7 +295,7 @@ check(
 
 // -------------------------------------------------------------------- stage 5
 
-console.log("\nstage 5 — keeper posts a history-batch root");
+console.log(cyan("\nstage 5 — keeper posts a history-batch root"));
 const root = new Uint8Array(32).fill(0xab);
 await send([await postRoot(h, admin, 1n, root, 2n)]);
 const registry = await client.rpc.getAccountInfo(await registryPda(programId, config, 1n)).send();
@@ -291,5 +303,5 @@ check("registry posted", registry.value !== null);
 console.log(`  pool     ${explorer(`address/${config}`)}`);
 console.log(`  treasury ${explorer(`address/${treasury}`)}`);
 
-console.log(failures === 0 ? "\n✓ all checks passed on devnet" : `\n✗ ${failures} check(s) FAILED`);
+console.log(failures === 0 ? green("\n✓ all checks passed on devnet") : red(`\n✗ ${failures} check(s) FAILED`));
 process.exit(failures === 0 ? 0 : 1);

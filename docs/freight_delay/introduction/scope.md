@@ -89,6 +89,11 @@ reuses the checked-in program keypair, localnet and devnet derive identical
 addresses; `Anchor.toml` defaults to `localnet`, so a devnet deploy passes
 `--provider.cluster devnet` explicitly.
 
+The devnet walkthrough (`freight_delay/scripts/devnet-e2e.ts`) is the only code here
+that spends anything, and it spends nothing of value: it creates its own 6-decimal SPL
+token, mints it to itself, and drives the pool with it. That token is not USDC and holds
+no value; the program's only requirement on a mint is `decimals == 6`.
+
 Test coverage is 38 tests: 31 LiteSVM integration tests and 7 unit tests of the
 ed25519 precompile parsing. The integration suite covers the happy path of every
 instruction, the rejection cases, and one regression per finding from the

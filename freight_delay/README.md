@@ -123,6 +123,11 @@ is.
 
 ![Devnet end-to-end run: all checks passed](assets/devnet-e2e.webp)
 
+The USDC in the devnet run is **demo money**: `scripts/devnet-e2e.ts` creates its own
+6-decimal SPL token and mints it to itself. It is not Circle's USDC, it came from no
+faucet, and it holds no value — a fresh mint per run, so no real balance is touched. The
+program checks only the mint's decimals (`decimals == 6`), nothing about its issuer.
+
 `cargo nextest run` drives the built `.so` in-process through LiteSVM, so it covers
 every guard and every rejection path without paying fees. `bun run devnet-e2e`
 (`scripts/devnet-e2e.ts`) proves the *deployed* binary on devnet end to end:

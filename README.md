@@ -57,6 +57,13 @@ a real cluster, with real fees, real confirmation and the real clock — there i
 time travel on devnet, so it buys a policy whose deadline is seconds away and
 waits for the chain clock to pass it.
 
+**The USDC in the devnet run is demo money.** The script creates its own 6-decimal
+SPL token and mints it to itself — it is not Circle's USDC, it came from no faucet,
+and it is worth nothing. Each run uses a fresh mint, so the pool address differs
+every time and no real balance is touched. The program is indifferent to which mint
+it is given, apart from its decimals: the only mint property the program checks is
+`decimals == 6`.
+
 ## Architecture
 
 One program, six instructions, four PDAs and one token account. Nothing else is
