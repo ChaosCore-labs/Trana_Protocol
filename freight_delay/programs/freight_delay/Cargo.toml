@@ -1,0 +1,51 @@
+[package]
+name = "freight_delay"
+version = "0.1.0"
+description = "Created with Anchor"
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "freight_delay"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+
+[dependencies]
+anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
+anchor-spl = "1.2.0"
+# Already in the tree via anchor-lang; added directly to read the instruction
+# sysvar and bind a signed attestation to the current transaction (CHA-16).
+solana-instructions-sysvar = "3.0.1"
+# Already in the tree via anchor-lang; the runtime's own id for the ed25519
+# precompile, so the program carries no `pubkey!` literal.
+solana-sdk-ids = "3.1.0"
+
+[dev-dependencies]
+base64 = "0.22"
+litesvm = { version = "0.16.0", features = ["precompiles"] }
+# Builds the ed25519 precompile instruction the way the runtime does, instead of
+# hand-rolling the header in tests. Already in the tree via litesvm.
+solana-ed25519-program = "3.0.0"
+litesvm-token = "0.16.0"
+solana-awesome = { version = "0.1.0", features = [
+  "clock",
+  "pubkey",
+  "keypair",
+  "signer",
+  "message",
+  "transaction",
+] }
+
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

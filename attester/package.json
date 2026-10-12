@@ -1,0 +1,20 @@
+{
+  "name": "@trana/attester",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Off-chain delivery attester for freight_delay: data source -> ed25519-signed attestation",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "attest": "bun run src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.2.0",
+    "@noble/hashes": "^2.4.0"
+  }
+}

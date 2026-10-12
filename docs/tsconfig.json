@@ -1,0 +1,44 @@
+{
+  // Follows Bun's TypeScript guide, including its recommended strict flags.
+  //
+  // Two deviations from that guide, both deliberate:
+  //   - `DOM` is in `lib` because the theme code runs in the browser, not in Bun.
+  //   - `node` is listed in `types` as well as `bun`: TypeScript 6 and later stop
+  //     discovering `@types/*` automatically, and the vitest suites import
+  //     `node:fs` and `node:path` (their definitions arrive with bun-types' own
+  //     dependency on `@types/node`).
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "allowJs": true,
+    // `vite/client` declares the side-effect imports Vite resolves for the theme
+    // (`import './custom.css'`) and any `?raw`/asset imports.
+    "types": ["bun", "node", "vite/client"],
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+
+    // `noPropertyAccessFromIndexSignature` is off, as it is in Bun's guide: it
+    // buys nothing here and would force `rules['fence']` and `dataset['viewer']`
+    // bracket access on idiomatic markdown-it and DOM code.
+  },
+  // `.vitepress` is a dot-directory, and the default include pattern does not
+  // descend into those, so the theme and the site config have to be named. The
+  // rest is checked transitively through the imports in `tests/`.
+  "include": ["**/*.ts", "**/*.mts", "**/*.mjs", ".vitepress/**/*.ts", ".vitepress/**/*.mts"],
+  // Built output and Vite's cache are not source. `node_modules` is excluded by
+  // default, and named here so the intent survives an `include` edit.
+  "exclude": [".vitepress/dist", ".vitepress/cache", "node_modules"]
+}
