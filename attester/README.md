@@ -31,6 +31,13 @@ milestone (`vessel_arrived`, falling back to `vessel_discharged`), ignoring the
 changes nothing on-chain. It needs a Terminal49 API key and no webhook — the
 interface is pull, and the crank decides when to ask.
 
+The key goes in `TERMINAL49_API_KEY`: copy `.env.example` to `.env` at the repo
+root (both are handled by `.gitignore`). **Plan gate:** reads need a paid plan.
+Terminal49's free tier permits only *creating* tracking requests — `containers`,
+`shipments` and `transport_events` all answer "You do not have permissions for
+using the API, except for creating tracking requests" (verified against a live
+key). Until reads are available the local demo stays on `SimulatedSource`.
+
 ## Payload layout
 
 32 bytes, little-endian, in order:

@@ -13,3 +13,8 @@ test-ledger
 .omo/
 .commandcode/
 skills-lock.json
+
+# Secrets: real env files stay local; .env.example is the committed template.
+.env
+.env.*
+!.env.example
