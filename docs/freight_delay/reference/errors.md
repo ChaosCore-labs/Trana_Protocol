@@ -31,9 +31,9 @@ Anchor numbers custom errors from 6000, in declaration order.
 | 6000 | `Unauthorized` | Only the configured authority may perform this action. | `withdraw_capital` `lp_position` constraint |
 | 6001 | `InvalidFee` | Fee must be below 10,000 basis points. | `initialize_pool` |
 | 6002 | `InvalidAmount` | Amount must be greater than zero. | `deposit_capital` (twice), `buy_policy` (twice), `withdraw_capital` (twice) |
-| 6003 | `InvalidDeadline` | Expected delivery must be in the future and grace period non-negative, with a representable deadline. | `buy_policy` |
+| 6003 | `InvalidDeadline` | Expected delivery must be in the future and within the maximum SLA horizon, and grace period non-negative, with a representable deadline. | `buy_policy` |
 | 6004 | `Insolvent` | Pool is insolvent: locked risk would exceed total capital. | `buy_policy` free-capital gate; `assert_solvent()` |
-| 6005 | `InsufficientFreeCapital` | Pool does not have enough unencumbered capital for this withdrawal. | `settle_policy` (triggered), `withdraw_capital` |
+| 6005 | `InsufficientFreeCapital` | Pool does not have enough unencumbered capital for this withdrawal, or the withdrawal would leave none while shares remain. | `settle_policy` (triggered), `withdraw_capital` |
 | 6006 | `PolicyNotMature` | Policy has not reached its delivery deadline plus grace period. | `settle_policy` |
 | 6007 | `PolicyAlreadySettled` | Policy has already been settled. | `settle_policy` |
 | 6008 | `DeliveryMismatch` | Delivery report does not match the policy shipment. | `settle_policy` — attestation shipment differs from the policy's |
@@ -59,9 +59,14 @@ where a valid input floors to nothing (`shares != 0` after share pricing,
 without inspecting its own arguments.
 
 **`InvalidDeadline` guards the schedule, not the shipment.** It is raised when
-`expected_delivery` is not strictly in the future, or when `grace_period` is
-negative. It says nothing about whether the quoted date is realistic — the
-program accepts any future timestamp and any non-negative slack.
+`expected_delivery` is not strictly in the future, when it lies further than
+`MAX_SLA_SECONDS` (one year) ahead of the current time, when `grace_period` is
+negative, or when the two cannot be added without overflowing `i64`. The horizon
+is what keeps every deadline reachable: without it a buyer could quote
+`i64::MAX`, and the maturity gate would then be unreachable for the life of the
+pool, stranding that payout permanently (pre-freeze audit: unreachable deadline). Inside the
+horizon it says nothing about whether the quoted date is realistic — any future
+timestamp up to a year out and any non-negative slack is accepted.
 
 **`InvalidPolicyId` keeps the id spendable exactly once.** `buy_policy` requires
 `policy_id > PoolConfig.last_policy_id` and then records it. The attester's
@@ -75,10 +80,13 @@ by the closing `assert_solvent()` in all four state-mutating handlers. It is the
 code to watch in production — reaching it from `assert_solvent()` would mean a
 handler broke the invariant.
 
-**`InsufficientFreeCapital` covers two different situations** with one message
-about withdrawal: a triggered settlement where capital no longer covers the
-payout, and a redemption exceeding free capital. The `settle_policy` case is
-arguably an internal-consistency failure rather than a withdrawal problem.
+**`InsufficientFreeCapital` covers three situations** with one message shaped
+around withdrawal: a redemption exceeding free capital, a redemption that would
+leave zero free capital while shares remain outstanding (the guard that keeps the
+pool usable — see [Invariants](/freight_delay/protocol/invariants)), and a
+triggered settlement where capital no longer covers the payout. The
+`settle_policy` case is arguably an internal-consistency failure rather than a
+withdrawal problem.
 
 **`PolicyNotMature` is the deadline gate.** Settlement is refused until
 `Clock::unix_timestamp >= expected_delivery + grace_period`. There is no upper

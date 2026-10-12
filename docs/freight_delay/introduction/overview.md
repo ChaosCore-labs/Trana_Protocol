@@ -75,9 +75,11 @@ A `Policy` is a fixed contract between the pool and one shipper:
 `actual_delivery > expected_delivery + grace_period` is the entire trigger
 condition. `actual_delivery` is the attested **destination-terminal arrival**, not
 door delivery — the one arrival event a carrier feed reports without guessing.
-A policy written with a deadline so far out that no voyage can breach
-it can never pay out, and the program accepts it: validating that a quoted SLA is
-actuarially sensible is out of scope.
+A policy written with a deadline no voyage on that corridor can breach can never
+pay out, and the program accepts it: validating that a quoted SLA is actuarially
+sensible is out of scope. What it does refuse is a deadline more than a year out
+(`MAX_SLA_SECONDS`), so a policy can never be written whose deadline the clock
+cannot reach.
 
 ## Where the money lives
 

@@ -10,7 +10,7 @@ Trana_Protocol/
 ├── freight_delay/
 │   ├── programs/freight_delay/
 │   │   ├── src/              # the Anchor program
-│   │   └── tests/            # LiteSVM integration tests (26 tests)
+│   │   └── tests/            # LiteSVM integration tests (29 tests)
 │   ├── runbooks/             # surfpool / txtx deploy scaffolding
 │   └── Anchor.toml
 ├── mise.toml                 # toolchain pins
@@ -78,10 +78,11 @@ The program has never been deployed to a public cluster in this repository's
 history. `Anchor.toml` configures `localnet` only, with the program id pinned as
 `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
 
-Test coverage is 26 LiteSVM integration tests covering the happy path of every
-instruction plus several rejection cases. The suite passes. It is not a security
-audit — most notably, no test exercises a second deposit, no test asserts a
-specific error code, and no test covers arithmetic boundaries.
+Test coverage is 29 LiteSVM integration tests: the happy path of every
+instruction, several rejection cases, and one regression per finding from the
+pre-freeze adversarial audit. The suite passes. It is not a security audit — most
+notably, no test asserts a specific error code and no test covers arithmetic
+boundaries.
 
 Treat the program as pre-audit. The invariant that matters (full
 collateralisation) does hold under the arithmetic as written, and that is argued

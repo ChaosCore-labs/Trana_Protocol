@@ -32,7 +32,7 @@ doing the work:
 | `buy_policy` | `+= net_premium` | `+= payout` | Entry gate: `free_capital >= payout`, i.e. `capital - locked >= payout`, so `locked + payout <= capital`. The premium added afterwards only widens the margin |
 | `settle_policy` (triggered) | `-= payout` | `-= payout` | Equal subtraction from both sides preserves the ordering |
 | `settle_policy` (not triggered) | unchanged | `-= payout` | Risk falls, capital holds |
-| `withdraw_capital` | `-= amount` | unchanged | Guard: `amount <= free_capital`, i.e. `amount <= capital - locked`, so `capital - amount >= locked` |
+| `withdraw_capital` | `-= amount` | unchanged | Guard: `amount <= free_capital`, i.e. `amount <= capital - locked`, so `capital - amount >= locked`. The redemption must also leave `free_capital > 0` while `total_shares > 0`, which is the liveness guard below |
 
 Two details make this airtight rather than merely plausible.
 
@@ -87,7 +87,42 @@ together. A position cannot be drained by anyone but its owner: the PDA seeds
 `[b"lp_position", config, lp]` bind the position to the signer, and
 `withdraw_capital` re-asserts `lp_position.lp == lp.key()`.
 
-### Risk is released exactly once per policy
+### A pool with shares outstanding always keeps capital free
+
+The primary invariant bounds what a pool owes. A second one keeps it *alive*:
+
+```text
+total_shares > 0  =>  free_capital > 0
+```
+
+The pressure here comes from `settle_policy`, which subtracts a payout from
+`total_capital` and `total_locked_risk` equally, leaving `free_capital`
+unchanged. So a triggered settlement is only harmless while the settled payout is
+strictly smaller than `total_capital`: settle the last policy of a pool whose
+`free_capital` is zero and `total_capital` lands on exactly zero. Every pricing
+division in the program divides by `total_capital` (`amount = shares *
+total_capital / total_shares` on withdrawal) or by `total_shares`
+(`shares = amount * total_shares / total_capital` on deposit), so that state is a
+pool nobody can redeem from and nobody can deposit into — permanently, and for
+free, since neither step needs a privileged caller (pre-freeze audit: zero-capital brick).
+
+The invariant is inductive over the four handlers that can move it:
+
+| Handler | Effect on `free_capital` | Preservation |
+|---|---|---|
+| `deposit_capital` | `+= amount` | Capital only grows |
+| `buy_policy` | `+= net_premium - payout` | The entry gate is `payout <= free_capital`, so the sum can never dip below `net_premium >= 1` |
+| `settle_policy` | unchanged | Equal subtraction from both sides |
+| `withdraw_capital` | `-= amount` | Guard: `total_shares == 0 || free_capital > 0` after the burn |
+
+`buy_policy` closing that gate is worth spelling out, because it is the reason
+the guard only lives in `withdraw_capital`: a purchase needs
+`payout_amount <= free_capital()` *before* the premium is credited, and
+`net_premium >= 1` for every admissible fee below `FEE_DENOMINATOR`, so the
+purchase leaves at least one base unit of free capital behind. A full exit by the
+last LP is the one path that may empty `free_capital` — `total_shares` reaches
+zero with it, there is no one left to strand, and the next deposit re-seeds the
+pool 1:1.
 
 `is_settled` is checked at the top of `settle_policy` and set to true at the
 bottom. A policy therefore releases its locked risk once, whether or not it pays,
@@ -112,9 +147,11 @@ a true one.
 
 **Locked risk is permanent unless an attestation arrives.** An earlier version of
 this page claimed the opposite, so it is worth stating exactly. The deadline is
-not what releases risk: `buy_policy` requires `expected_delivery > now`,
-`settle_policy` requires `now >= expected_delivery + grace_period`, and the clock
-is monotonic, so that comparison never blocks a matured policy. But
+not what releases risk: `buy_policy` requires `expected_delivery > now`
+and no further than `MAX_SLA_SECONDS` ahead, `settle_policy` requires
+`now >= expected_delivery + grace_period`, and the clock is monotonic, so a
+policy's deadline is always reachable and that comparison never blocks a matured
+policy. But
 `settle_policy` also always verifies a signed arrival — early or late — and the
 attester reports an absent arrival as `null` rather than inventing a timestamp.
 Nothing else in the program can release the payout: its six instructions contain

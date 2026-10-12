@@ -10,10 +10,9 @@ module, where the guards and arithmetic live.
 |---|---|---|---|
 | `initialize_pool` | admin + attester | `fee_bps < 10_000`; the attester must sign | `PoolInitialized` |
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
-| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `policy_id > config.last_policy_id`; `free_capital >= payout` | `PolicyPurchased` |
-
+| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `expected_delivery <= now + MAX_SLA_SECONDS`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `policy_id > config.last_policy_id`; `free_capital >= payout` | `PolicyPurchased` |
 | `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled`, `PolicyClosed` |
-| `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital` | `CapitalWithdrawn` |
+| `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital`; after the burn, `total_shares == 0` or `free_capital > 0` | `CapitalWithdrawn` |
 | `post_root` | keeper | `keeper == config.keeper`; the `epoch` PDA must be unposted (`init`) | `RootPosted` |
 
 Beyond these, the `#[derive(Accounts)]` structs carry constraints that are just
@@ -89,8 +88,10 @@ pub fn buy_policy(
 ```
 
 - **Guards, in order:** `payout_amount != 0`; `premium_amount != 0`;
-  `expected_delivery > Clock::unix_timestamp`; `grace_period >= 0`; then
-  `policy_id > config.last_policy_id`; then `free_capital() >= payout_amount`.
+  `expected_delivery > Clock::unix_timestamp`; `grace_period >= 0`;
+  `expected_delivery <= now + MAX_SLA_SECONDS`; `expected_delivery +
+  grace_period` representable in `i64`; then `policy_id >
+  config.last_policy_id`; then `free_capital() >= payout_amount`.
 - **Fee split:** `fee = premium * fee_bps / 10_000` (floored),
   `net_premium = premium - fee`.
 - **Effect:** `total_capital += net_premium`, `total_fees += fee`,
@@ -108,9 +109,16 @@ is still refused if the pool's pre-existing free capital is short.
 The transfer happens **before** the policy is written, so a buyer who cannot pay
 leaves no state behind.
 
-Nothing validates that the quoted `expected_delivery` is realistic, or that
-`grace_period` is a sane amount of slack. A policy written with a deadline in
-2030 simply locks its payout until 2030.
+`expected_delivery` is bounded to one year ahead (`MAX_SLA_SECONDS` from
+`Clock::unix_timestamp` at purchase). That bound is what keeps the settlement
+deadline reachable: without it a buyer could name `i64::MAX` for a one-unit
+premium and the maturity gate (`now >= deadline`) would make the locked payout
+unreleasable by anyone, attester included (pre-freeze audit: unreachable deadline).
+
+Inside the horizon nothing validates that the quoted date is realistic, or that
+`grace_period` is a sane amount of slack: a policy quoted four months out for a
+ten-day voyage is accepted. A deadline the corridor's traffic can never breach is
+a product-parameter question, not a program guard.
 
 `policy_id` is a nonce, not a label: the attester signs it, and `settle_policy`
 requires `nonce == policy_id`. Ids therefore strictly increase per pool and are
@@ -198,9 +206,10 @@ to free capacity.
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.
-A pair whose sum is not representable is rejected at purchase, so the addition
-never fails here: the comparison needs no upper bound because the clock is
-monotonic, and the gate stays satisfied once the deadline passes. Passing the
+A pair whose sum is not representable is rejected at purchase — as is a deadline
+more than `MAX_SLA_SECONDS` ahead — so the addition never fails here and the
+deadline is always reachable. The comparison itself needs no upper bound: the
+clock is monotonic, and the gate stays satisfied once the deadline passes. Passing the
 deadline releases nothing on its own, though. Settlement still requires a signed
 arrival, and no instruction expires a policy, so a shipment that is never
 attested leaves its payout in `total_locked_risk` permanently — what such a
@@ -216,7 +225,8 @@ pub fn withdraw_capital(ctx: Context<WithdrawCapital>, shares: u64) -> Result<()
 ```
 
 - **Guards, in order:** `shares != 0`; `shares <= lp_position.shares`;
-  `amount != 0`; `amount <= free_capital()`.
+  `amount != 0`; `amount <= free_capital()`; then, after the burn,
+  `total_shares == 0 || free_capital() > 0`.
 - **Pricing:** `amount = shares * total_capital / total_shares`, floored.
 - **Effect:** `lp_position.shares -= shares`, `total_shares -= shares`,
   `total_capital -= amount`, then `transfer_from_treasury(amount)` to the LP's ATA.
@@ -228,9 +238,26 @@ The `lp_position` account carries
 the seeds, so a caller cannot redeem against a position that is not theirs even
 if they somehow presented the right PDA.
 
-There is no cooldown, no unbonding queue, and no withdrawal cap other than free
-capital. Withdrawal is immediate and unconditional once the pool has
-unencumbered capital.
+There is no cooldown, no unbonding queue, and no withdrawal ceiling other than
+free capital. Withdrawal is immediate and unconditional once the pool has
+unencumbered capital — but a redemption may not take the last of it while shares
+are still outstanding.
+
+The reason is liveness, not solvency. A redemption can legally empty
+`free_capital` while a payout is still locked; the settlement that follows then
+subtracts that payout from a `total_capital` sitting exactly on the locked risk,
+and the last trigger drives it to zero. Both pricing divisions then divide by
+zero — `amount = shares * total_capital / total_shares` on the way out,
+`shares = amount * total_shares / total_capital` on the way in — so nobody could
+redeem and nobody could ever deposit into that pool again. It is a permanent,
+free denial of service on the whole pool, and it needs no privileged caller
+(pre-freeze audit: zero-capital brick).
+
+The guard costs one base unit of liquidity: at least 0.000001 USDC of free
+capital always stays behind while shares exist. A full exit is exempt, because
+`total_shares == 0` means there is nobody left to strand — and a pool brought to
+zero that way restarts cleanly, since the first deposit into an empty share book
+prices 1:1.
 
 ## `post_root`
 
