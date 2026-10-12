@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::{
     constants::*,
@@ -101,16 +101,18 @@ impl<'info> BuyPolicy<'info> {
             .checked_add(payout_amount)
             .ok_or(FreightDelayError::MathOverflow)?;
 
-        token::transfer(
+        token::transfer_checked(
             CpiContext::new(
                 self.token_program.key(),
-                Transfer {
+                TransferChecked {
                     from: self.insured_usdc.to_account_info(),
+                    mint: self.usdc_mint.to_account_info(),
                     to: self.treasury.to_account_info(),
                     authority: self.insured.to_account_info(),
                 },
             ),
             premium_amount,
+            self.usdc_mint.decimals,
         )?;
 
         self.policy.set_inner(Policy {

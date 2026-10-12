@@ -81,6 +81,7 @@ impl<'info> WithdrawCapital<'info> {
 
         shared::transfer_from_treasury(
             &self.token_program,
+            &self.usdc_mint,
             &self.treasury,
             &self.lp_usdc,
             &self.config,

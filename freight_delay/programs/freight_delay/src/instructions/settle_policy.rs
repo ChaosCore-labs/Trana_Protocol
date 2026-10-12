@@ -106,6 +106,7 @@ impl<'info> SettlePolicy<'info> {
 
             shared::transfer_from_treasury(
                 &self.token_program,
+                &self.usdc_mint,
                 &self.treasury,
                 &self.insured_usdc,
                 &self.config,
