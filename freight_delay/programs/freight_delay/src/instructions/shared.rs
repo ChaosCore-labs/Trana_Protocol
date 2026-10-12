@@ -12,6 +12,9 @@ use crate::{constants::CONFIG_SEED, error::FreightDelayError, state::PoolConfig}
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct DeliveryAttestation {
     pub shipment_id: u64,
+    /// The attested **destination-terminal arrival**, unix seconds: the event a
+    /// carrier feed reports (`vessel_arrived` / discharged / gate-out), not door
+    /// delivery (CHA-33).
     pub actual_delivery: i64,
     pub terminal_code: u64,
     pub nonce: u64,

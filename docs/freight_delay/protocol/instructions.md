@@ -135,7 +135,10 @@ same transaction.
   instruction sysvar must contain an ed25519 precompile entry over
   `attestation.to_message(&config.key())`, the 64-byte message bound to *this*
   pool, signed by `config.oracle_authority`.
-- **Trigger:** `attestation.actual_delivery > expected_delivery + grace_period`.
+- **Trigger:** `attestation.actual_delivery > expected_delivery + grace_period`,
+  where `actual_delivery` is the attested **destination-terminal arrival**
+  (`vessel_arrived` / discharged / gate-out), not door delivery. The SLA is
+  terminal-to-terminal and the program never infers last-mile.
 - **Effect, always:** `total_locked_risk -= payout_amount`, `policy.is_settled = true`.
 - **Effect, on trigger:** `total_capital -= payout_amount`,
   `policy.is_paid = true`, and `transfer_from_treasury(payout)` to the shipper's ATA.
@@ -145,7 +148,9 @@ same transaction.
 Notes that are easy to get wrong:
 
 The signed message is 64 bytes: the pool's address, then `shipment_id`,
-`actual_delivery`, `terminal_code` and `nonce`. Two bindings come out of it, and
+`actual_delivery`, `terminal_code` and `nonce`. `actual_delivery` is the
+**destination-terminal arrival** timestamp in unix seconds, and `terminal_code`
+names the terminal it was measured at. Two bindings come out of it, and
 they stop different attacks.
 
 The pool prefix stops **cross-pool** replay. Without it a signature travels

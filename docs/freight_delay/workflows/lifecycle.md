@@ -42,6 +42,7 @@ sequenceDiagram
     rect rgb(137, 180, 130, 0.12)
     Note over Attester: Stage 4 — arrival attestation (off chain)
     Attester->>Attester: sign (pool, shipment, arrival, terminal, nonce)
+    Note over Attester: arrival = destination-terminal arrival, not door delivery
     Note over Attester: no transaction, no account
     end
 

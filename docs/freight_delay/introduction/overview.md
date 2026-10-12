@@ -23,6 +23,11 @@ that triggers on a measured arrival timestamp, not on an assessed loss, so there
 is no adjuster, no claim file, and no dispute window — the attested arrival either
 crosses the deadline or it does not.
 
+The measured arrival is **arrival at the destination terminal** — the event a
+freight API attests honestly (`vessel_arrived`, discharged, gate-out) — not door
+delivery. The trigger hedges terminal-to-terminal transit, which is what the
+available data can prove; it never implies last-mile.
+
 ## Mechanism in one pass
 
 ```mermaid
@@ -62,13 +67,15 @@ A `Policy` is a fixed contract between the pool and one shipper:
 | Term | Field | Meaning |
 |---|---|---|
 | Shipment | `shipment_id` | Which bill of lading the delivery feed tracks |
-| SLA | `expected_delivery` | The quoted arrival timestamp |
+| SLA | `expected_delivery` | The quoted **terminal-arrival** timestamp |
 | Slack | `grace_period` | Allowed lateness before a payout fires |
 | Payout | `payout_amount` | USDC paid on trigger, locked as risk at purchase |
 | Cost | `premium_amount` | USDC paid up front, of which a fee is taken |
 
 `actual_delivery > expected_delivery + grace_period` is the entire trigger
-condition. A policy written with a deadline so far out that no voyage can breach
+condition. `actual_delivery` is the attested **destination-terminal arrival**, not
+door delivery — the one arrival event a carrier feed reports without guessing.
+A policy written with a deadline so far out that no voyage can breach
 it can never pay out, and the program accepts it: validating that a quoted SLA is
 actuarially sensible is out of scope.
 

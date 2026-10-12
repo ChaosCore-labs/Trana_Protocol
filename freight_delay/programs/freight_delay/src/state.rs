@@ -57,7 +57,8 @@ pub struct Policy {
     pub policy_id: u64,
     /// Bill of lading / container identifier, matched against a settlement attestation.
     pub shipment_id: u64,
-    /// SLA delivery timestamp the shipment was quoted.
+    /// SLA timestamp the shipment was quoted: the **destination-terminal arrival**
+    /// the attester measures against, not a door-delivery time (CHA-33).
     pub expected_delivery: i64,
     /// Slack after `expected_delivery` before a late arrival triggers a payout.
     /// Not bounded on chain: a grace period approaching the corridor's transit
