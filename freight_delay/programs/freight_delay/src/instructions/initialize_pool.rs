@@ -8,10 +8,14 @@ pub struct InitializePool<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     pub usdc_mint: Account<'info, Mint>,
+    /// The attester, and the pool's identity. It must sign: the config address
+    /// includes this key, so nobody else can create — or squat — the pool
+    /// belonging to a given attester.
+    pub oracle_authority: Signer<'info>,
     #[account(
         init,
         payer = admin,
-        seeds = [CONFIG_SEED, usdc_mint.key().as_ref()],
+        seeds = [CONFIG_SEED, usdc_mint.key().as_ref(), oracle_authority.key().as_ref()],
         bump,
         space = 8 + PoolConfig::INIT_SPACE,
     )]
@@ -30,20 +34,18 @@ pub struct InitializePool<'info> {
 }
 
 impl<'info> InitializePool<'info> {
-    pub fn initialize_pool(
-        &mut self,
-        fee_bps: u16,
-        oracle_authority: Pubkey,
-        bumps: InitializePoolBumps,
-    ) -> Result<()> {
+    pub fn initialize_pool(&mut self, fee_bps: u16, bumps: InitializePoolBumps) -> Result<()> {
+        // Below the denominator, not at it: a 100% fee floors `net_premium` to
+        // zero, and a pool whose capital can reach zero can never be deposited
+        // into again — share pricing divides by it.
         require!(
-            fee_bps <= FEE_DENOMINATOR as u16,
+            (fee_bps as u64) < FEE_DENOMINATOR,
             FreightDelayError::InvalidFee
         );
 
         self.config.set_inner(PoolConfig {
             admin: self.admin.key(),
-            oracle_authority,
+            oracle_authority: self.oracle_authority.key(),
             usdc_mint: self.usdc_mint.key(),
             treasury: self.treasury.key(),
             total_capital: 0,
@@ -59,7 +61,7 @@ impl<'info> InitializePool<'info> {
             usdc_mint: self.usdc_mint.key(),
             treasury: self.treasury.key(),
             admin: self.admin.key(),
-            oracle_authority,
+            oracle_authority: self.oracle_authority.key(),
             fee_bps,
         });
 

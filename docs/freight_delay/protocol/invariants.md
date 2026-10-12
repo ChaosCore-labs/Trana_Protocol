@@ -33,7 +33,6 @@ doing the work:
 | `settle_policy` (triggered) | `-= payout` | `-= payout` | Equal subtraction from both sides preserves the ordering |
 | `settle_policy` (not triggered) | unchanged | `-= payout` | Risk falls, capital holds |
 | `withdraw_capital` | `-= amount` | unchanged | Guard: `amount <= free_capital`, i.e. `amount <= capital - locked`, so `capital - amount >= locked` |
-| `report_delivery_milestone` | unchanged | unchanged | No pool accounting is touched |
 
 Two details make this airtight rather than merely plausible.
 
@@ -109,11 +108,37 @@ likes, up to the collateral each one reserves — and because the arrival it wri
 is trusted as signed, a false "delivered late" is indistinguishable on chain from
 a true one.
 
-**Locked risk with no report.** A policy whose shipment is never attested keeps
-its payout in `total_locked_risk` forever, because `settle_policy` requires the
-`DeliveryReport` account to exist and there is no timeout path. The invariant
-still holds — the capital is genuinely still there — but it is unwithdrawable by
-LPs, since `free_capital` excludes it.
+**Locked risk is permanent unless an attestation arrives.** An earlier version of
+this page claimed the opposite, so it is worth stating exactly. The deadline is
+not what releases risk: `buy_policy` requires `expected_delivery > now`,
+`settle_policy` requires `now >= expected_delivery + grace_period`, and the clock
+is monotonic, so that comparison never blocks a matured policy. But
+`settle_policy` also always verifies a signed arrival — early or late — and the
+attester reports an absent arrival as `null` rather than inventing a timestamp.
+Nothing else in the program can release the payout: its five instructions contain
+no timeout, expiry or refund, so `total_locked_risk` only ever falls through a
+settlement.
+
+A shipment that is never attested therefore keeps its payout in
+`total_locked_risk`, and outside `free_capital`, indefinitely: capital that pays
+no one and returns nothing. The invariant still holds — the capital is genuinely
+there — but LPs cannot withdraw it, which is the cost [Scope](/freight_delay/introduction/scope)
+lists as the deliberate absence of a refund or timeout for unsettleable policies.
+
+That absence is a decision rather than an oversight, and it makes settlement
+liveness a first-class operational concern instead of a formality: the trigger is
+terminal arrival, and a timeout would pay precisely in the total-loss case where
+cargo insurance already indemnifies the same exporter — manufacturing a double
+payout rather than covering a gap.
+
+**Grace period versus transit time.** A related trap that is not enforced
+on chain: because a delay can only be as large as the transit itself, and ocean
+transit runs roughly 15–40 days depending on the corridor, a `grace_period` that
+approaches the route's transit time makes a policy that can practically never
+trigger. `buy_policy` accepts any non-negative grace period and any future
+`expected_delivery`, so this is a product-parameter question rather than a
+program invariant — but a grace period chosen without reference to the route
+sells a policy that is very unlikely to pay.
 
 **Fee value.** Fees accrue to `total_fees` and are excluded from LP claims and
 from `free_capital`. They are also unwithdrawable by any instruction, so the

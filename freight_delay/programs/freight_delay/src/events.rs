@@ -32,14 +32,17 @@ pub struct PolicyPurchased {
     pub premium_amount: u64,
 }
 
+/// Emitted by `settle_policy` for every settlement: the attested fact that
+/// resolved the policy. No `reporter` field — the evidence is the signature,
+/// not a wallet identity.
 #[event]
-pub struct DeliveryReported {
+pub struct DeliveryAttested {
     pub config: Pubkey,
+    pub policy: Pubkey,
     pub shipment_id: u64,
     pub actual_delivery: i64,
     pub terminal_code: u64,
-    pub timestamp: i64,
-    pub reporter: Pubkey,
+    pub nonce: u64,
 }
 
 #[event]

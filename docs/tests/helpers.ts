@@ -10,7 +10,15 @@ export const config = readFileSync(CONFIG_PATH, 'utf8')
 /** Glob subset covering `srcExclude`; the globstar matches zero or more segments. */
 function globToRegExp(glob: string): RegExp {
   const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const pattern = escaped.replace(/\*\*\//g, '(?:.*/)?').replace(/\*/g, '[^/]*')
+  // Expand `**/` to a placeholder first: doing it inline lets the later `*`
+  // pass re-mangle the `.*` it introduces, collapsing the globstar to a single
+  // segment. (That bug silently made `**/README.md` match only top-level files.)
+  const GLOBSTAR = '\u0001GLOBSTAR\u0001'
+  const pattern = escaped
+    .replace(/\*\*\//g, GLOBSTAR)
+    .replace(/\*/g, '[^/]*')
+    .split(GLOBSTAR)
+    .join('(?:.*/)?')
   return new RegExp(`^${pattern}$`)
 }
 

@@ -49,7 +49,7 @@ mise install                 # agave, anchor, surfpool, nextest, sccache, bun
 
 cd freight_delay
 anchor build                 # -> target/deploy/freight_delay.so
-cargo nextest run            # 15 LiteSVM tests
+cargo nextest run            # 28 tests: 21 LiteSVM + 7 unit
 
 # The documentation site.
 cd ../docs

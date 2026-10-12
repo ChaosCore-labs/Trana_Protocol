@@ -1,0 +1,30 @@
+{
+  "name": "@trana/freight-delay-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local MVP walkthrough for freight_delay (CHA-31)",
+  "scripts": {
+    "codegen": "bun run scripts/codegen.ts",
+    "prelifecycle": "bun install --cwd ../attester",
+    "lifecycle": "bun run scripts/lifecycle.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana-program/system": "^0.15.0",
+    "@solana-program/token": "^0.17.0",
+    "@solana/kit": "^8.4.0",
+    "@solana/kit-plugin-rpc": "^0.19.0",
+    "@solana/kit-plugin-signer": "^0.19.0",
+    "@solana/program-client-core": "8.4.0",
+    "@solana/surfpool": "^1.6.1",
+    "@solana/sysvars": "8.4.0"
+  },
+  "devDependencies": {
+    "@codama/nodes-from-anchor": "^1.5.6",
+    "@codama/renderers-js": "^2.5.0",
+    "@types/bun": "latest",
+    "codama": "^1.11.0",
+    "typescript": "^5.9.0"
+  }
+}

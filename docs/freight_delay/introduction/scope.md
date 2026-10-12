@@ -10,7 +10,7 @@ Trana_Protocol/
 ├── freight_delay/
 │   ├── programs/freight_delay/
 │   │   ├── src/              # the Anchor program
-│   │   └── tests/            # LiteSVM integration tests (15 tests)
+│   │   └── tests/            # LiteSVM integration tests (21 tests)
 │   ├── runbooks/             # surfpool / txtx deploy scaffolding
 │   └── Anchor.toml
 ├── mise.toml                 # toolchain pins
@@ -25,10 +25,10 @@ indexer, no API service, and no on-chain oracle integration.
 
 | Surface | Count | Detail |
 |---|---|---|
-| Instructions | 6 | `initialize_pool`, `deposit_capital`, `buy_policy`, `report_delivery_milestone`, `settle_policy`, `withdraw_capital` |
-| Account types | 4 | `PoolConfig`, `LpPosition`, `Policy`, `DeliveryReport` |
-| Error variants | 11 | One flat `FreightDelayError` enum |
-| Events | 6 | One per instruction |
+| Instructions | 5 | `initialize_pool`, `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital` |
+| Account types | 3 | `PoolConfig`, `LpPosition`, `Policy` |
+| Error variants | 12 | One flat `FreightDelayError` enum |
+| Events | 6 | One per instruction, plus `DeliveryAttested` |
 | Outbound CPIs | 1 | `transfer_from_treasury`, SPL Token `transfer` |
 
 ## What is explicitly *not* implemented
@@ -44,8 +44,9 @@ protocol, and none of them exists in `src/`:
 - **Any governance or admin setter.** `fee_bps` and `oracle_authority` are fixed
   at initialisation and cannot be changed. `PoolConfig.admin` is never read.
 - **A Project44 / Spire AIS / Switchboard-TEE oracle integration.** No oracle
-  program, no TEE, no HTTP. `report_delivery_milestone` trusts the configured
-  authority keypair unconditionally.
+  program, no TEE, no HTTP. The program verifies an ed25519 signature from the
+  key configured at init (`oracle_authority`), but how that attester obtains the
+  arrival is entirely off chain and out of protocol scope.
 - **A fee withdrawal path.** `total_fees` accrues and can never be paid out.
 - **A refund or timeout for unsettleable policies.** If a shipment is never
   attested, the locked risk is permanent.

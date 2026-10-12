@@ -12,13 +12,12 @@ sequenceDiagram
     actor Shipper
     participant Program as Freight Delay program
     participant Treasury as Treasury
-    participant Report as DeliveryReport
-    actor Oracle as Oracle Authority
+    actor Attester as Attester (off chain)
     actor Crank
 
     rect rgb(137, 180, 130, 0.12)
     Note over Admin, Treasury: Stage 1 — pool creation
-    Admin->>Program: initialize_pool(fee_bps, oracle)
+    Admin->>Program: initialize_pool(fee_bps) + attester signature
     Program->>Treasury: init, authority = PoolConfig
     Program-->>Admin: PoolInitialized
     end
@@ -41,17 +40,18 @@ sequenceDiagram
     end
 
     rect rgb(137, 180, 130, 0.12)
-    Note over Oracle, Report: Stage 4 — arrival attestation
-    Oracle->>Program: report_delivery_milestone(shipment, arrival, terminal)
-    Program->>Program: require reporter == oracle_authority
-    Program->>Report: init with actual_delivery and timestamp
-    Program-->>Oracle: DeliveryReported
+    Note over Attester: Stage 4 — arrival attestation (off chain)
+    Attester->>Attester: sign (pool, shipment, arrival, terminal, nonce)
+    Note over Attester: no transaction, no account
     end
 
     rect rgb(137, 180, 130, 0.12)
     Note over Crank, Shipper: Stage 5 — settlement
-    Crank->>Program: settle_policy()
+    Crank->>Program: settle_policy(attestation, signature)
+    Crank->>Program: ed25519 precompile instruction
     Program->>Program: require mature and unsettled
+    Program->>Program: require pool prefix, nonce == policy_id, shipment matches
+    Program->>Program: verify signature against oracle_authority
     Program->>Program: release locked risk
     alt arrived after the deadline
         Program->>Program: capital -= payout
@@ -61,6 +61,7 @@ sequenceDiagram
         Note over Program: no transfer
     end
     Program->>Program: mark settled
+    Program-->>Crank: DeliveryAttested
     Program-->>Crank: PolicySettled
     end
 
@@ -76,9 +77,22 @@ sequenceDiagram
 ```
 
 Stages 2 and 3 can interleave freely: policies can be sold the moment the pool
-holds capital, and more capital can arrive while policies are live. Stage 4 must
-precede stage 5 for a given `shipment_id` — `settle_policy` requires the
-`DeliveryReport` account to exist, and there is no fallback if it does not.
+holds capital, and more capital can arrive while policies are live.
+
+Stage 4 is deliberately not a transaction. The attester signs the arrival and
+stops; nothing is written on chain until a crank relays that signature during
+settlement. So the signature is not a prerequisite step so much as an input to
+stage 5.
+
+Stage 5 is permissionless but not automatic. Nothing calls `settle_policy` on
+its own, so a policy waits for a crank — and its payout stays in
+`total_locked_risk`, outside `free_capital`, until one runs. A crank is necessary
+but not sufficient: settlement also requires a signed arrival, so a shipment that
+never arrives — and is therefore reported as `null` by the attester — leaves its
+payout locked with no expiry, because the program has no timeout or refund path.
+Liveness here is a first-class concern rather than a formality; see
+[Invariants](/freight_delay/protocol/invariants) for why that missing timeout is a
+decision rather than an oversight.
 
 ## Pool state machine
 
@@ -94,10 +108,9 @@ stateDiagram-v2
     Funded --> Unfunded : withdraw_capital empties total_capital
 ```
 
-`report_delivery_milestone` is deliberately absent from this diagram: it creates a
-`DeliveryReport` and cannot move pool accounting at all — `config` is not even
-`mut` in its account list, so it only reads `oracle_authority` to authorise the
-caller.
+Every instruction that touches the pool appears here. There is no
+attestation-only instruction any more: an arrival reaches the program purely as
+instruction data to `settle_policy`.
 
 There is no terminal or frozen state. The pool has no pause, no shutdown, and no
 migration path; it is a permanent state machine.
@@ -114,19 +127,24 @@ stateDiagram-v2
 ```
 
 `Late` and `OnTime` are both terminal, distinguished by the `is_paid` flag.
-`Placed` is terminal in practice for any policy whose shipment is never attested:
-`settle_policy` needs the `DeliveryReport` account to exist, so the transition
-never becomes available.
+
+`Placed` is the transient state. Both transitions out of it require a valid
+signed attestation, but every policy acquires one option to leave: once
+`now >= expected_delivery + grace_period`, any attested arrival — early or late —
+is enough, and a non-triggering arrival still releases the locked risk. A policy
+sits in `Placed` only until a crank settles it.
+
+The state machine has no timeout edge, by design: the trigger is terminal
+arrival, and a timeout would pay in the total-loss case that cargo insurance
+already covers.
 
 ## Instruction dependency graph
 
 ```mermaid
 flowchart TD
     Init["initialize_pool"] --> Dep["deposit_capital"]
-    Init --> Report["report_delivery_milestone"]
     Dep --> Buy["buy_policy"]
     Buy --> Settle["settle_policy"]
-    Report --> Settle
     Dep --> With["withdraw_capital"]
     Settle -.->|frees locked risk| With
 ```

@@ -15,7 +15,7 @@ pub struct WithdrawCapital<'info> {
     pub lp: Signer<'info>,
     #[account(
         mut,
-        seeds = [CONFIG_SEED, config.usdc_mint.as_ref()],
+        seeds = [CONFIG_SEED, config.usdc_mint.as_ref(), config.oracle_authority.as_ref()],
         bump = config.bump,
     )]
     pub config: Account<'info, PoolConfig>,

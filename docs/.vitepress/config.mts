@@ -8,7 +8,9 @@ export default defineConfig({
     'Freight-delay indemnity on Solana — a fully-collateralised parametric insurance program. Anchor architecture, instructions, and workflows.',
   lang: 'en-US',
   cleanUrls: true,
-  srcExclude: ['**/README.md'],
+  // AGENTS.md files are agent instructions, not site content: excluding them
+  // keeps them out of the build and out of the sidebar-orphan check.
+  srcExclude: ['**/README.md', '**/AGENTS.md'],
   // Dark-only: `false` hides the appearance switch entirely and VitePress never
   // adds its `.dark` class, so `theme/custom.css` carries the gruvbox palette on
   // `:root` and the Shiki theme below is a single (not light/dark) theme.
@@ -62,7 +64,10 @@ export default defineConfig({
         },
         {
           text: 'Workflows',
-          items: [{ text: 'Pool Lifecycle', link: '/freight_delay/workflows/lifecycle' }],
+          items: [
+            { text: 'Pool Lifecycle', link: '/freight_delay/workflows/lifecycle' },
+            { text: 'Local Walkthrough', link: '/freight_delay/workflows/local-walkthrough' },
+          ],
         },
         {
           text: 'Reference',

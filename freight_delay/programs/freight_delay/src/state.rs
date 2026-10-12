@@ -2,12 +2,14 @@ use anchor_lang::prelude::*;
 
 use crate::error::FreightDelayError;
 
-/// Global pool state. One pool per USDC mint.
+/// Global pool state. One pool per (USDC mint, attester) pair: the seeds carry
+/// the attester's key, so a pool cannot be created — or squatted — without it.
 #[account]
 #[derive(InitSpace)]
 pub struct PoolConfig {
     pub admin: Pubkey,
-    /// Sole signer allowed to write `DeliveryReport` accounts.
+    /// The attester's raw 32-byte ed25519 public key, not a wallet address.
+    /// `settle_policy` accepts only an attestation signed by this key.
     pub oracle_authority: Pubkey,
     pub usdc_mint: Pubkey,
     /// Program-owned token account that holds all pool liquidity.
@@ -53,27 +55,17 @@ pub struct LpPosition {
 pub struct Policy {
     pub insured: Pubkey,
     pub policy_id: u64,
-    /// Bill of lading / container identifier matched against a `DeliveryReport`.
+    /// Bill of lading / container identifier, matched against a settlement attestation.
     pub shipment_id: u64,
     /// SLA delivery timestamp the shipment was quoted.
     pub expected_delivery: i64,
     /// Slack after `expected_delivery` before a late arrival triggers a payout.
+    /// Not bounded on chain: a grace period approaching the corridor's transit
+    /// time sells a policy that can practically never trigger.
     pub grace_period: i64,
     pub payout_amount: u64,
     pub premium_amount: u64,
     pub is_settled: bool,
     pub is_paid: bool,
-    pub bump: u8,
-}
-
-/// Oracle-attested delivery milestone for a shipment.
-#[account]
-#[derive(InitSpace)]
-pub struct DeliveryReport {
-    pub shipment_id: u64,
-    pub actual_delivery: i64,
-    pub terminal_code: u64,
-    pub timestamp: i64,
-    pub reporter: Pubkey,
     pub bump: u8,
 }

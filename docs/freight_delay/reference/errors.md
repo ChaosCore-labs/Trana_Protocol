@@ -1,6 +1,6 @@
 # Error Codes
 
-One flat enum, eleven variants, every one carrying a `#[msg]`. There are no
+One flat enum, twelve variants, every one carrying a `#[msg]`. There are no
 nested error types and no `anyhow` anywhere in the program.
 
 ```rust
@@ -17,6 +17,7 @@ pub enum FreightDelayError {
     DeliveryMismatch,
     InsufficientShares,
     MathOverflow,
+    AttestationRejected,
 }
 ```
 
@@ -26,25 +27,28 @@ Anchor numbers custom errors from 6000, in declaration order.
 
 | Code | Variant | Message | Raised by |
 |---|---|---|---|
-| 6000 | `Unauthorized` | Only the configured authority may perform this action. | `report_delivery_milestone` authority check; `withdraw_capital` `lp_position` constraint |
-| 6001 | `InvalidFee` | Fee must be between 0 and 10,000 basis points. | `initialize_pool` |
+| 6000 | `Unauthorized` | Only the configured authority may perform this action. | `withdraw_capital` `lp_position` constraint |
+| 6001 | `InvalidFee` | Fee must be below 10,000 basis points. | `initialize_pool` |
 | 6002 | `InvalidAmount` | Amount must be greater than zero. | `deposit_capital` (twice), `buy_policy` (twice), `withdraw_capital` (twice) |
-| 6003 | `InvalidDeadline` | Expected delivery must be in the future with a non-negative grace period. | `buy_policy` |
+| 6003 | `InvalidDeadline` | Expected delivery must be in the future and grace period non-negative, with a representable deadline. | `buy_policy` |
 | 6004 | `Insolvent` | Pool is insolvent: locked risk would exceed total capital. | `buy_policy` free-capital gate; `assert_solvent()` |
 | 6005 | `InsufficientFreeCapital` | Pool does not have enough unencumbered capital for this withdrawal. | `settle_policy` (triggered), `withdraw_capital` |
 | 6006 | `PolicyNotMature` | Policy has not reached its delivery deadline plus grace period. | `settle_policy` |
 | 6007 | `PolicyAlreadySettled` | Policy has already been settled. | `settle_policy` |
-| 6008 | `DeliveryMismatch` | Delivery report does not match the policy shipment. | `settle_policy` — unreachable, see below |
+| 6008 | `DeliveryMismatch` | Delivery report does not match the policy shipment. | `settle_policy` — attestation shipment differs from the policy's |
 | 6009 | `InsufficientShares` | Not enough shares to redeem. | `withdraw_capital` |
 | 6010 | `MathOverflow` | Arithmetic overflow. | Every `checked_*` money path |
+| 6011 | `AttestationRejected` | Delivery attestation signature is missing or invalid. | `settle_policy` — signature check and nonce check |
 
 ## Notes per variant
 
-**`Unauthorized` serves two mechanisms.** In `report_delivery_milestone` it is
-raised by an explicit `require_keys_eq!`. In `withdraw_capital` it comes from an
-account constraint
-(`constraint = lp_position.lp == lp.key() @ FreightDelayError::Unauthorized`), so the
-same code reaches the client from two very different checks.
+**`Unauthorized` now has one source.** It is raised only by `withdraw_capital`,
+from an account constraint
+(`constraint = lp_position.lp == lp.key() @ FreightDelayError::Unauthorized`).
+It previously also guarded `report_delivery_milestone`'s signer; that instruction
+was removed with the pull-model change. Note that `settle_policy` does **not** use
+this code — an unauthorised settlement fails the signature check and surfaces as
+`AttestationRejected`.
 
 **`InvalidAmount` is heavily overloaded.** It covers zero on the way in
 (`amount != 0`, `shares != 0`, `payout != 0`, `premium != 0`) and also the case
@@ -70,13 +74,23 @@ arguably an internal-consistency failure rather than a withdrawal problem.
 
 **`PolicyNotMature` is the deadline gate.** Settlement is refused until
 `Clock::unix_timestamp >= expected_delivery + grace_period`. There is no upper
-bound: a policy can be settled long after that deadline, and until it is, its
-payout stays locked.
+bound: a policy can be settled at any point after that deadline, and the gate is
+satisfied for good once passed, because the clock only moves forward. Until
+someone settles, the payout stays in `total_locked_risk`.
 
-**`DeliveryMismatch` is unreachable.** The `delivery_report` account is derived
-from `policy.shipment_id` in its seeds, so the field it holds necessarily equals
-the policy's, and the equality check at `settle_policy.rs:61` cannot fail. It is
-defensive code retained for clarity.
+**`DeliveryMismatch` now guards a supplied value.** Settlement no longer derives
+the attested shipment from an account's seeds; the attestation arrives as
+instruction data, so `shipment_id` is caller-supplied and this check is load
+bearing. It is raised when `attestation.shipment_id` differs from
+`policy.shipment_id`. (Before the pull-model change it was unreachable, because
+the report account was seed-derived.)
+
+**`AttestationRejected` is the signature gate.** It is raised in two places: when
+`attestation.nonce` is not `policy.policy_id`, and when the ed25519 precompile
+scan finds no instruction in the same transaction carrying the configured
+`oracle_authority`, the exact 64-byte message — this pool's address followed by
+the delivery fields — and the exact signature. One code covers both because the
+client fix is the same — obtain a fresh, correctly-bound attestation.
 
 **`MathOverflow` is the catch-all for checked arithmetic.** Every money path
 converts `u64 → u128`, applies `checked_*`, and maps failure through
@@ -93,7 +107,7 @@ Failures from Anchor's own constraint checks bypass `FreightDelayError` entirely
 | Wrong bump | `ConstraintSeeds` / `ConstraintHasOne` |
 | Treasury authority or mint mismatch | `ConstraintTokenOwner` / `ConstraintTokenMint` |
 | ATA missing or wrong owner | `AccountNotInitialized` / token program error |
-| Policy or delivery report already initialised | `AccountAlreadyInitialized` |
+| Policy already initialised, or a pool already exists for the mint | `AccountAlreadyInitialized` |
 | Token transfer with insufficient balance | SPL Token error |
 
 When a test asserts `is_err()` without decoding the code, it cannot distinguish
@@ -102,4 +116,4 @@ these from a `FreightDelayError`.
 ## Related
 
 - [Instructions](/freight_delay/protocol/instructions) — the guard order in each handler
-- [Delivery Report](/freight_delay/reference/events) — the `DeliveryReported` event raised by the oracle path
+- [Events](/freight_delay/reference/events) — including the `DeliveryAttested` record of a settlement
