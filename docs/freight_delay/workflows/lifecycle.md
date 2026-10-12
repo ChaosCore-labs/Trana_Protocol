@@ -122,7 +122,7 @@ stateDiagram-v2
     Funded --> Funded : buy_policy
     Funded --> Funded : settle_policy
     Funded --> Funded : withdraw_capital
-    Funded --> Unfunded : withdraw_capital empties total_capital
+    Funded --> Unfunded : withdraw_capital drains the last position
 ```
 
 Every instruction that touches the pool appears here. There is no
@@ -171,6 +171,12 @@ Read the dotted edge as the only coupling between settlement and redemption:
 `settle_policy` lowers `total_locked_risk`, which raises `free_capital`, which is
 the ceiling on `withdraw_capital`. Until policies settle, LP capital is not fully
 withdrawable.
+
+There is a floor as well: while shares are outstanding, a redemption must leave
+`free_capital` above zero, so the pool can absorb the next triggered payout and
+every pricing division keeps a non-zero denominator. A pool can still be drained
+to zero — by the last LP redeeming the last shares, into an empty share book the
+next deposit re-seeds 1:1.
 
 ## Next
 

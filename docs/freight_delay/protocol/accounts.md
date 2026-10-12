@@ -133,11 +133,14 @@ PDA is closed (CHA-18), so both are only ever read during the settling
 transaction.
 
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
-settlement time rather than stored. Neither term is validated for realism: any
-future `expected_delivery` and any non-negative `grace_period` is accepted,
-provided the sum is representable — `buy_policy` rejects a pair that overflows
-`i64`, because settlement recomputes the sum and `checked_add` would otherwise
-make such a policy permanently unsettleable, locking its collateral for good.
+settlement time rather than stored. `buy_policy` rejects a pair whose sum is not
+representable in `i64` — settlement recomputes the sum and `checked_add` would
+otherwise make such a policy permanently unsettleable, locking its collateral for
+good — and it bounds `expected_delivery` to `(now, now + MAX_SLA_SECONDS]`, so no
+policy can name a deadline the clock could not reach. Beyond those two bounds
+neither term is validated for realism: any non-negative `grace_period` and any
+deadline inside the horizon is accepted, however unlikely the voyage is to match
+it.
 
 ## Where the USDC actually is
 

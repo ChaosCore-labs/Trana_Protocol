@@ -79,6 +79,16 @@ impl<'info> WithdrawCapital<'info> {
             .checked_sub(amount)
             .ok_or(FreightDelayError::MathOverflow)?;
 
+        // A pool with shares outstanding has to keep some capital free, or the next
+        // triggered settlement takes `total_capital` to exactly zero and both pricing
+        // divisions die on it — the pool could never be deposited into or redeemed
+        // again (pre-freeze audit: zero-capital brick). A full exit is exempt: `total_shares == 0`
+        // means there is nobody left to strand.
+        require!(
+            self.config.total_shares == 0 || self.config.free_capital() > 0,
+            FreightDelayError::InsufficientFreeCapital
+        );
+
         shared::transfer_from_treasury(
             &self.token_program,
             &self.usdc_mint,

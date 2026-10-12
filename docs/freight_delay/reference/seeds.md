@@ -23,6 +23,15 @@ pub const REGISTRY_SEED: &[u8] = b"registry";
 /// Basis-point denominator for `PoolConfig::fee_bps` (1 bp = 1/100 of 1%).
 #[constant]
 pub const FEE_DENOMINATOR: u64 = 10_000;
+
+/// Longest SLA the program will quote, measured from the current time.
+///
+/// Without a bound a policy can name a deadline the clock can never reach
+/// (`i64::MAX`), and `settle_policy`'s maturity gate (`now >= deadline`) then
+/// makes its locked risk unreleasable by anyone — including the attester
+/// (pre-freeze audit: unreachable deadline).
+#[constant]
+pub const MAX_SLA_SECONDS: i64 = 365 * 24 * 60 * 60;
 ```
 
 These are declared with `#[constant]` rather than bare `pub const` so they are
