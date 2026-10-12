@@ -26,4 +26,6 @@ pub enum FreightDelayError {
     MathOverflow,
     #[msg("Delivery attestation signature is missing or invalid.")]
     AttestationRejected,
+    #[msg("Policy id must be greater than the last one issued for this pool.")]
+    InvalidPolicyId,
 }

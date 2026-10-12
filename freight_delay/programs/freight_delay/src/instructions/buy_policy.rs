@@ -71,6 +71,14 @@ impl<'info> BuyPolicy<'info> {
             expected_delivery.checked_add(grace_period).is_some(),
             FreightDelayError::InvalidDeadline
         );
+        // Ids strictly increase and are never reused. `nonce` is the policy id, so
+        // a repeated id would let an attestation signed for a closed policy settle
+        // a new one on the same shipment (CHA-18).
+        require!(
+            policy_id > self.config.last_policy_id,
+            FreightDelayError::InvalidPolicyId
+        );
+        self.config.last_policy_id = policy_id;
         require!(
             self.config.free_capital() >= payout_amount,
             FreightDelayError::Insolvent

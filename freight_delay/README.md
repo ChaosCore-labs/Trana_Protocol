@@ -30,9 +30,9 @@ freight_delay/
 │   │   ├── instructions/     # one file per instruction: Accounts struct + handler
 │   │   ├── state.rs          # PoolConfig, LpPosition, Policy
 │   │   ├── constants.rs      # the four PDA seeds and FEE_DENOMINATOR
-│   │   ├── error.rs          # Freight DelayError — 12 flat variants
+│   │   ├── error.rs          # Freight DelayError — 13 flat variants
 │   │   └── events.rs         # eight events (settle_policy emits three)
-│   └── tests/test_freight_delay.rs  # 24 integration tests (7 more unit tests in shared.rs)
+│   └── tests/test_freight_delay.rs  # 26 integration tests (7 more unit tests in shared.rs)
 ├── client/program.ts         # lifecycle harness over the generated client
 ├── client/generated/         # Codama client generated from target/idl — do not hand-edit
 ├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
@@ -70,7 +70,7 @@ release profile turns on `overflow-checks` with `lto = "fat"` and
 ```bash
 cd freight_delay
 anchor build                  # -> target/deploy/freight_delay.so
-cargo nextest run             # 31 tests — this is Anchor.toml [scripts].test
+cargo nextest run             # 33 tests — this is Anchor.toml [scripts].test
 cargo check --all-targets     # fast type-check loop
 ```
 
@@ -146,7 +146,7 @@ fund its own payout. And every state-mutating handler ends with
 ## Test harness
 
 - **LiteSVM**, not `anchor-client` and not a validator: `litesvm` +
-  `litesvm-token`, with `solana-awesome` re-exports. 24 of the 31 tests live in
+  `litesvm-token`, with `solana-awesome` re-exports. 26 of the 33 tests live in
   `programs/freight_delay/tests/test_freight_delay.rs`; the other 7 are unit tests
   of the ed25519 precompile parsing in `src/instructions/shared.rs`.
 - Each test builds a fresh `LiteSVM` through `setup()`, airdrops four keypairs and

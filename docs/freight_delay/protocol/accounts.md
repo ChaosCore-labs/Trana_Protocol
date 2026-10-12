@@ -31,9 +31,10 @@ cannot be created — or squatted — by anyone else.
 | `total_locked_risk` | `u64` | 8 | Sum of `payout_amount` over unsettled policies |
 | `total_shares` | `u64` | 8 | Sum of all LP shares |
 | `total_fees` | `u64` | 8 | Protocol fees accrued; **never decremented** |
+| `last_policy_id` | `u64` | 8 | Highest id issued; ids strictly increase and are never reused |
 | `fee_bps` | `u16` | 2 | Premium fee in basis points, immutable after init |
 | `bump` | `u8` | 1 | PDA bump |
-| | | **195** | `space = 8 + 195 = 203` |
+| | | **203** | `space = 8 + 203 = 211` |
 
 Two methods live on this struct:
 
@@ -100,9 +101,11 @@ pubkey cannot sign.
 
 ## `Policy` — one hedge's terms
 
-Seeds `[b"policy", config, policy_id_le]`. Note the little-endian encoding of
-`policy_id`; the ID is chosen by the buyer, so any caller can mint any
-unclaimed ID.
+Seeds `[b"policy", config, policy_id_le]`, with `policy_id` little-endian. The
+buyer picks the id, but it must be strictly greater than the pool's
+`last_policy_id` and is spent from then on: the attester's `nonce` is the policy
+id, so a reused id would let a stale attestation settle a policy it was not
+signed for (CHA-18).
 
 The account is **closed at settlement** (CHA-18): `settle_policy` emits
 `PolicyClosed` and sends the account's rent to the shipper. The chain events, not

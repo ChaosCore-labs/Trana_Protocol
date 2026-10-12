@@ -156,7 +156,7 @@ is caller-supplied arbitrary.
 programs/freight_delay/src/
 ├── lib.rs                           # declare_id!, #[program] mod freight_delay — forwarding only
 ├── constants.rs                     # 5 seed literals + FEE_DENOMINATOR
-├── error.rs                         # FreightDelayError — 12 flat variants
+├── error.rs                         # FreightDelayError — 13 flat variants
 ├── events.rs                        # eight events
 ├── instructions.rs                  # pub mod + pub use registry
 ├── state.rs                         # PoolConfig, LpPosition, Policy, Registry

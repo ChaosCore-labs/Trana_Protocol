@@ -10,7 +10,7 @@ Trana_Protocol/
 ├── freight_delay/
 │   ├── programs/freight_delay/
 │   │   ├── src/              # the Anchor program
-│   │   └── tests/            # LiteSVM integration tests (24 tests)
+│   │   └── tests/            # LiteSVM integration tests (26 tests)
 │   ├── runbooks/             # surfpool / txtx deploy scaffolding
 │   └── Anchor.toml
 ├── mise.toml                 # toolchain pins
@@ -27,7 +27,7 @@ indexer, no API service, and no on-chain oracle integration.
 |---|---|---|
 | Instructions | 6 | `initialize_pool`, `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital`, `post_root` |
 | Account types | 4 | `PoolConfig`, `LpPosition`, `Policy`, `Registry` |
-| Error variants | 12 | One flat `FreightDelayError` enum |
+| Error variants | 13 | One flat `FreightDelayError` enum |
 | Events | 8 | One per instruction, plus `DeliveryAttested` and `PolicyClosed` |
 | Outbound CPIs | 1 | `transfer_from_treasury`, SPL Token `transfer_checked` |
 
@@ -78,7 +78,7 @@ The program has never been deployed to a public cluster in this repository's
 history. `Anchor.toml` configures `localnet` only, with the program id pinned as
 `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
 
-Test coverage is 24 LiteSVM integration tests covering the happy path of every
+Test coverage is 26 LiteSVM integration tests covering the happy path of every
 instruction plus several rejection cases. The suite passes. It is not a security
 audit — most notably, no test exercises a second deposit, no test asserts a
 specific error code, and no test covers arithmetic boundaries.

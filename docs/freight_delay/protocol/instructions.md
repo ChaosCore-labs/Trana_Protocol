@@ -10,7 +10,7 @@ module, where the guards and arithmetic live.
 |---|---|---|---|
 | `initialize_pool` | admin + attester | `fee_bps < 10_000`; the attester must sign | `PoolInitialized` |
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
-| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `free_capital >= payout` | `PolicyPurchased` |
+| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `policy_id > config.last_policy_id`; `free_capital >= payout` | `PolicyPurchased` |
 
 | `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled`, `PolicyClosed` |
 | `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital` | `CapitalWithdrawn` |
@@ -90,7 +90,7 @@ pub fn buy_policy(
 
 - **Guards, in order:** `payout_amount != 0`; `premium_amount != 0`;
   `expected_delivery > Clock::unix_timestamp`; `grace_period >= 0`; then
-  `free_capital() >= payout_amount`.
+  `policy_id > config.last_policy_id`; then `free_capital() >= payout_amount`.
 - **Fee split:** `fee = premium * fee_bps / 10_000` (floored),
   `net_premium = premium - fee`.
 - **Effect:** `total_capital += net_premium`, `total_fees += fee`,
@@ -111,6 +111,12 @@ leaves no state behind.
 Nothing validates that the quoted `expected_delivery` is realistic, or that
 `grace_period` is a sane amount of slack. A policy written with a deadline in
 2030 simply locks its payout until 2030.
+
+`policy_id` is a nonce, not a label: the attester signs it, and `settle_policy`
+requires `nonce == policy_id`. Ids therefore strictly increase per pool and are
+never reused — even after the policy's PDA is closed and its address is free
+(CHA-18). Reusing one would let a signature minted for the old policy settle the
+new one on the same shipment.
 
 ## `settle_policy`
 

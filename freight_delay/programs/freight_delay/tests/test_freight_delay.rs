@@ -454,6 +454,40 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
 }
 
 #[test]
+fn buy_policy_requires_a_strictly_increasing_policy_id() {
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(buy_policy(&mut env, 5, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+    // 4's PDA is free, but the id is spent: ids only ever go up.
+    assert!(buy_policy(&mut env, 4, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_err());
+    assert!(buy_policy(&mut env, 5, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_err());
+    assert!(buy_policy(&mut env, 6, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+    assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 6);
+}
+
+#[test]
+fn buy_policy_rejects_reusing_a_closed_policy_id() {
+    // `nonce` is the policy id, so a reused id would let a stale attestation
+    // settle a policy it was not signed for. Closing the PDA frees the address;
+    // the monotonic guard is what keeps the id spent (CHA-18).
+    let mut env = funded_pool(1_000_000 * UNIT);
+    assert!(buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+
+    set_ts(&mut env.svm, deadline() + 1);
+    assert!(settle_policy(&mut env, 1, deadline() - 100).is_ok());
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "the closed policy's address is free again"
+    );
+
+    let later = deadline() + 10_000;
+    assert!(
+        buy_policy(&mut env, 1, 500_000 * UNIT, 50_000 * UNIT, later).is_err(),
+        "a closed id cannot be bought back"
+    );
+    assert!(buy_policy(&mut env, 2, 500_000 * UNIT, 50_000 * UNIT, later).is_ok());
+}
+
+#[test]
 fn post_root_stores_the_batch_root() {
     let mut env = funded_pool(1_000 * UNIT);
     let root = [7u8; 32];

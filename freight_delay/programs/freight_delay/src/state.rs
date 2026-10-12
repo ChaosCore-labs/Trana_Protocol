@@ -23,6 +23,11 @@ pub struct PoolConfig {
     pub total_locked_risk: u64,
     pub total_shares: u64,
     pub total_fees: u64,
+    /// The highest `policy_id` issued so far. Ids must strictly increase and are
+    /// never reused, even after a policy's PDA is closed: the attester's `nonce`
+    /// is the policy id, so a repeated id would let a stale attestation settle a
+    /// policy it was not signed for (CHA-18).
+    pub last_policy_id: u64,
     pub fee_bps: u16,
     pub bump: u8,
 }

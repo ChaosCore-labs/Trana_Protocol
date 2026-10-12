@@ -58,6 +58,7 @@ impl<'info> InitializePool<'info> {
             total_locked_risk: 0,
             total_shares: 0,
             total_fees: 0,
+            last_policy_id: 0,
             fee_bps,
             bump: bumps.config,
         });

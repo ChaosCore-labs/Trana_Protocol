@@ -1,6 +1,6 @@
 # Error Codes
 
-One flat enum, twelve variants, every one carrying a `#[msg]`. There are no
+One flat enum, thirteen variants, every one carrying a `#[msg]`. There are no
 nested error types and no `anyhow` anywhere in the program.
 
 ```rust
@@ -18,6 +18,7 @@ pub enum FreightDelayError {
     InsufficientShares,
     MathOverflow,
     AttestationRejected,
+    InvalidPolicyId,
 }
 ```
 
@@ -39,6 +40,7 @@ Anchor numbers custom errors from 6000, in declaration order.
 | 6009 | `InsufficientShares` | Not enough shares to redeem. | `withdraw_capital` |
 | 6010 | `MathOverflow` | Arithmetic overflow. | Every `checked_*` money path |
 | 6011 | `AttestationRejected` | Delivery attestation signature is missing or invalid. | `settle_policy` — signature check and nonce check |
+| 6012 | `InvalidPolicyId` | Policy id must be greater than the last one issued for this pool. | `buy_policy` |
 
 ## Notes per variant
 
@@ -60,6 +62,12 @@ without inspecting its own arguments.
 `expected_delivery` is not strictly in the future, or when `grace_period` is
 negative. It says nothing about whether the quoted date is realistic — the
 program accepts any future timestamp and any non-negative slack.
+
+**`InvalidPolicyId` keeps the id spendable exactly once.** `buy_policy` requires
+`policy_id > PoolConfig.last_policy_id` and then records it. The attester's
+`nonce` is the policy id, so ids must never repeat — once a policy's PDA closes
+its address is free again, and a reused id would let an attestation signed for
+the old policy settle the new one on the same shipment.
 
 **`Insolvent` means capital adequacy.** The message describes locked risk
 exceeding total capital, and it is raised both by the `buy_policy` entry gate and
