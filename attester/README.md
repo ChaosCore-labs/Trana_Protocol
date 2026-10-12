@@ -22,9 +22,14 @@ on-chain* — so we run the publisher ourselves.
 | `src/simulated-source.ts` | `SimulatedSource`: scripted arrivals, the **required** demo backup. |
 | `src/signing.ts` | ed25519 keypair gen, sign, verify. |
 | `src/attest.ts` | Source-agnostic glue: fetch → payload → signature. |
+| `src/terminal49-source.ts` | `Terminal49Source`: the real carrier feed, polled over REST. |
 
-Terminal49Source (the real API) is **not built yet** — it lands behind the same
-`ArrivalSource` interface and changes nothing on-chain.
+`src/terminal49-source.ts` is the real feed: it polls
+`GET /v2/containers/{id}/transport_events` and reads the terminal-arrival
+milestone (`vessel_arrived`, falling back to `vessel_discharged`), ignoring the
+`estimated.*` events. It sits behind the same `ArrivalSource` interface and
+changes nothing on-chain. It needs a Terminal49 API key and no webhook — the
+interface is pull, and the crank decides when to ask.
 
 ## Payload layout
 
@@ -44,7 +49,7 @@ different one. Any change here is a breaking change to the on-chain verify.
 
 ```bash
 bun install
-bun test          # 16 tests
+bun test          # 24 tests
 bun run typecheck
 bun run attest    # print a signed attestation for one arrival
 ```
