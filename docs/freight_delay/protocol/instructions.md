@@ -174,15 +174,20 @@ Replay within a pool is stopped by the `nonce`, and replay across pools by the
 pool prefix — see above. What the scan adds is *relevance*: the signature must
 have been checked by the precompile in this very transaction.
 
-The risk is released on **both** branches. A non-triggered settle leaves
-`is_settled = true, is_paid = false` and returns the capital to free capacity.
+Given an attested arrival, the risk is released on **both** branches. A
+non-triggered settle leaves `is_settled = true, is_paid = false` and returns the
+capital to free capacity.
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.
 A pair whose sum is not representable is rejected at purchase, so the addition
 never fails here: the comparison needs no upper bound because the clock is
-monotonic, and the gate stays satisfied once the deadline passes. Every policy
-therefore has a settlement path; what it may lack is a crank to take it.
+monotonic, and the gate stays satisfied once the deadline passes. Passing the
+deadline releases nothing on its own, though. Settlement still requires a signed
+arrival, and no instruction expires a policy, so a shipment that is never
+attested leaves its payout in `total_locked_risk` permanently — what such a
+policy lacks is an attestation, not a crank. See
+[Invariants](/freight_delay/protocol/invariants).
 
 ## `withdraw_capital`
 

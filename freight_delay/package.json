@@ -6,6 +6,7 @@
   "description": "Local MVP walkthrough for freight_delay (CHA-31)",
   "scripts": {
     "codegen": "bun run scripts/codegen.ts",
+    "prelifecycle": "bun install --cwd ../attester",
     "lifecycle": "bun run scripts/lifecycle.ts",
     "typecheck": "tsc --noEmit"
   },

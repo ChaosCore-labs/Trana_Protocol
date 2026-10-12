@@ -86,10 +86,13 @@ stage 5.
 
 Stage 5 is permissionless but not automatic. Nothing calls `settle_policy` on
 its own, so a policy waits for a crank — and its payout stays in
-`total_locked_risk`, outside `free_capital`, until one runs. Every policy does
-become settleable once its deadline passes, so this is a liveness concern rather
-than a stranded-capital one; see [Invariants](/freight_delay/protocol/invariants)
-for why.
+`total_locked_risk`, outside `free_capital`, until one runs. A crank is necessary
+but not sufficient: settlement also requires a signed arrival, so a shipment that
+never arrives — and is therefore reported as `null` by the attester — leaves its
+payout locked with no expiry, because the program has no timeout or refund path.
+Liveness here is a first-class concern rather than a formality; see
+[Invariants](/freight_delay/protocol/invariants) for why that missing timeout is a
+decision rather than an oversight.
 
 ## Pool state machine
 

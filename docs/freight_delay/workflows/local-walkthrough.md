@@ -12,6 +12,11 @@ bun run lifecycle
 `anchor build` first is not optional. The script deploys the compiled `.so`, so
 a stale artifact silently walks through old code.
 
+The walkthrough signs with the real `attester/src/` code rather than a copy of
+it, so that package's dependencies have to be present too. They are installed by
+a `prelifecycle` hook on the `lifecycle` script, which means a single
+`bun install` in `freight_delay` is enough on a fresh clone.
+
 ## What it runs
 
 `freight_delay/scripts/lifecycle.ts` boots an embedded [Surfnet](https://solana.com/docs/tools/surfpool)

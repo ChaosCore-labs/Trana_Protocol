@@ -74,8 +74,11 @@ implemented program replaces *who is trusted* with a verifiable signature from a
 single attester — which is a real improvement over an unsigned wallet check, but
 it is not decentralised, and the trust boundary is still one key.
 
-Switchboard, the oracle the design document named, shut down in September 2026.
-See the project Decision Log for why no public oracle carries freight data.
+Switchboard, the oracle the design document named, shut down in September 2026,
+and no public oracle carries freight data. That is why this repository has no
+oracle dependency to speak of: the attester sources the arrival off chain, which
+[Scope & Status](/freight_delay/introduction/scope) records as a deliberate
+boundary rather than an omission.
 
 ## Claims that do hold
 
