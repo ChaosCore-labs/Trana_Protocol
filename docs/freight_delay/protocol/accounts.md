@@ -31,7 +31,7 @@ cannot be created — or squatted — by anyone else.
 | `total_locked_risk` | `u64` | 8 | Sum of `payout_amount` over unsettled policies |
 | `total_shares` | `u64` | 8 | Sum of all LP shares |
 | `total_fees` | `u64` | 8 | Protocol fees accrued; **never decremented** |
-| `last_policy_id` | `u64` | 8 | Highest id issued; ids strictly increase and are never reused |
+| `last_policy_id` | `u64` | 8 | Highest id issued; ids strictly increase, within `MAX_POLICY_ID_GAP` of the previous one, and never repeat |
 | `fee_bps` | `u16` | 2 | Premium fee in basis points, immutable after init |
 | `bump` | `u8` | 1 | PDA bump |
 | | | **203** | `space = 8 + 203 = 211` |
@@ -103,9 +103,10 @@ pubkey cannot sign.
 
 Seeds `[b"policy", config, policy_id_le]`, with `policy_id` little-endian. The
 buyer picks the id, but it must be strictly greater than the pool's
-`last_policy_id` and is spent from then on: the attester's `nonce` is the policy
-id, so a reused id would let a stale attestation settle a policy it was not
-signed for (CHA-18).
+`last_policy_id` and no more than `MAX_POLICY_ID_GAP` ahead of it, and it is spent
+from then on: the attester's `nonce` is the policy id, so a reused id would let a
+stale attestation settle a policy it was not signed for, and a runaway id would
+spend the remaining id space out from under every later policy (CHA-18).
 
 The account is **closed at settlement** (CHA-18): `settle_policy` emits
 `PolicyClosed` and sends the account's rent to the shipper. The chain events, not
@@ -115,7 +116,7 @@ once the PDA is gone.
 | Field | Type | Bytes | Meaning |
 |---|---|---|---|
 | `insured` | `Pubkey` | 32 | Payout recipient; also the account constraint at settlement |
-| `policy_id` | `u64` | 8 | Caller-chosen identifier |
+| `policy_id` | `u64` | 8 | Caller-chosen identifier, at most `MAX_POLICY_ID_GAP` past the counter |
 | `shipment_id` | `u64` | 8 | Bill of lading matched against a settlement attestation |
 | `expected_delivery` | `i64` | 8 | The SLA arrival timestamp the shipment was quoted |
 | `grace_period` | `i64` | 8 | Slack after `expected_delivery` before a delay triggers |
@@ -133,14 +134,12 @@ PDA is closed (CHA-18), so both are only ever read during the settling
 transaction.
 
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
-settlement time rather than stored. `buy_policy` rejects a pair whose sum is not
-representable in `i64` — settlement recomputes the sum and `checked_add` would
-otherwise make such a policy permanently unsettleable, locking its collateral for
-good — and it bounds `expected_delivery` to `(now, now + MAX_SLA_SECONDS]`, so no
-policy can name a deadline the clock could not reach. Beyond those two bounds
-neither term is validated for realism: any non-negative `grace_period` and any
-deadline inside the horizon is accepted, however unlikely the voyage is to match
-it.
+settlement time rather than stored. `buy_policy` requires that sum to land inside
+`(now, now + MAX_SLA_SECONDS]`: settlement recomputes it, so a pair outside the
+horizon — or one whose sum overflows `i64` — would leave the policy permanently
+unsettleable and lock its collateral for good. Neither term is validated for
+realism inside the horizon: any future quote and any non-negative `grace_period`
+are accepted, however unlikely the voyage is to match them.
 
 ## Where the USDC actually is
 

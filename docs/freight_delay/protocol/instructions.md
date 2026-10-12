@@ -8,9 +8,9 @@ module, where the guards and arithmetic live.
 
 | Instruction | Signer | Explicit guards | Event |
 |---|---|---|---|
-| `initialize_pool` | admin + attester | `fee_bps < 10_000`; the attester must sign | `PoolInitialized` |
+| `initialize_pool` | admin + attester | `fee_bps < 10_000`; `usdc_mint.decimals == 6`; the attester must sign | `PoolInitialized` |
 | `deposit_capital` | lp | `amount != 0`; `shares != 0` | `CapitalDeposited` |
-| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `expected_delivery <= now + MAX_SLA_SECONDS`; `grace_period >= 0`; `expected_delivery + grace_period` representable; `policy_id > config.last_policy_id`; `free_capital >= payout` | `PolicyPurchased` |
+| `buy_policy` | insured | `payout != 0`; `premium != 0`; `expected_delivery > now`; `grace_period >= 0`; `expected_delivery + grace_period <= now + MAX_SLA_SECONDS`; `last_policy_id < policy_id <= last_policy_id + MAX_POLICY_ID_GAP`; `free_capital >= payout` | `PolicyPurchased` |
 | `settle_policy` | any (crank) | `!is_settled`; `now >= expected_delivery + grace_period`; attestation matches policy and nonce; ed25519 signature verified | `PolicySettled`, `PolicyClosed` |
 | `withdraw_capital` | lp | `shares != 0`; `shares <= position.shares`; `amount != 0`; `amount <= free_capital`; after the burn, `total_shares == 0` or `free_capital > 0` | `CapitalWithdrawn` |
 | `post_root` | keeper | `keeper == config.keeper`; the `epoch` PDA must be unposted (`init`) | `RootPosted` |
@@ -33,6 +33,10 @@ pub fn initialize_pool(ctx: Context<InitializePool>, fee_bps: u16) -> Result<()>
 - **Guards:** `fee_bps < FEE_DENOMINATOR`. Below the denominator, not at it: a 100%
   fee floors the net premium to zero, and a pool whose capital can reach zero can
   never be deposited into again, because share pricing divides by it.
+- **Mint:** the `usdc_mint` account carries `decimals == 6`, the base unit every
+  amount in the program is denominated in. The mint's authorities are deliberately
+  not checked: canonical USDC keeps a live mint and freeze authority with its
+  issuer, so requiring either to be absent would reject the pool's own asset.
 - **Signers:** `admin` pays the rent; `oracle_authority` must also sign, because its
   key is part of the pool's address.
 - **Creates:** `PoolConfig` at `[b"config", usdc_mint, oracle_authority]`, sized
@@ -89,9 +93,11 @@ pub fn buy_policy(
 
 - **Guards, in order:** `payout_amount != 0`; `premium_amount != 0`;
   `expected_delivery > Clock::unix_timestamp`; `grace_period >= 0`;
-  `expected_delivery <= now + MAX_SLA_SECONDS`; `expected_delivery +
-  grace_period` representable in `i64`; then `policy_id >
-  config.last_policy_id`; then `free_capital() >= payout_amount`.
+  `expected_delivery + grace_period <= now + MAX_SLA_SECONDS`, the sum wrapped in
+  `checked_add` so an overflowing pair fails here too; then `policy_id >
+  config.last_policy_id` with
+  `policy_id - config.last_policy_id <= MAX_POLICY_ID_GAP`; then
+  `free_capital() >= payout_amount`.
 - **Fee split:** `fee = premium * fee_bps / 10_000` (floored),
   `net_premium = premium - fee`.
 - **Effect:** `total_capital += net_premium`, `total_fees += fee`,
@@ -109,22 +115,26 @@ is still refused if the pool's pre-existing free capital is short.
 The transfer happens **before** the policy is written, so a buyer who cannot pay
 leaves no state behind.
 
-`expected_delivery` is bounded to one year ahead (`MAX_SLA_SECONDS` from
-`Clock::unix_timestamp` at purchase). That bound is what keeps the settlement
-deadline reachable: without it a buyer could name `i64::MAX` for a one-unit
-premium and the maturity gate (`now >= deadline`) would make the locked payout
-unreleasable by anyone, attester included (pre-freeze audit: unreachable deadline).
+`expected_delivery + grace_period` is bounded to one year ahead
+(`MAX_SLA_SECONDS` from `Clock::unix_timestamp` at purchase). That bound is what
+keeps the settlement deadline reachable: without it a buyer could name `i64::MAX`
+for a one-unit premium — or pair an ordinary quote with a grace period of centuries —
+and the maturity gate (`now >= deadline`) would make the locked payout
+unreleasable by anyone, attester included (pre-freeze audit: unreachable deadline,
+unbounded grace).
 
-Inside the horizon nothing validates that the quoted date is realistic, or that
-`grace_period` is a sane amount of slack: a policy quoted four months out for a
-ten-day voyage is accepted. A deadline the corridor's traffic can never breach is
-a product-parameter question, not a program guard.
+Inside the horizon nothing validates that the quoted date is realistic: a policy
+quoted four months out for a ten-day voyage is accepted. A deadline the corridor's
+traffic can never breach is a product-parameter question, not a program guard.
 
 `policy_id` is a nonce, not a label: the attester signs it, and `settle_policy`
 requires `nonce == policy_id`. Ids therefore strictly increase per pool and are
 never reused — even after the policy's PDA is closed and its address is free
 (CHA-18). Reusing one would let a signature minted for the old policy settle the
-new one on the same shipment.
+new one on the same shipment. The step from the previous id is capped at
+`MAX_POLICY_ID_GAP`, which is what keeps the space open: the counter only ever
+moves up, and without a cap one buyer naming `u64::MAX` would leave no reachable
+id for any policy after it.
 
 ## `settle_policy`
 
@@ -206,9 +216,9 @@ to free capacity.
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.
-A pair whose sum is not representable is rejected at purchase — as is a deadline
-more than `MAX_SLA_SECONDS` ahead — so the addition never fails here and the
-deadline is always reachable. The comparison itself needs no upper bound: the
+Purchase already refused any pair whose sum does not land inside `MAX_SLA_SECONDS`
+— which also covers a sum that overflows `i64` — so the addition never fails here
+and the deadline is always reachable. The comparison itself needs no upper bound: the
 clock is monotonic, and the gate stays satisfied once the deadline passes. Passing the
 deadline releases nothing on its own, though. Settlement still requires a signed
 arrival, and no instruction expires a policy, so a shipment that is never

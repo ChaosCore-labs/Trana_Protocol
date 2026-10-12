@@ -260,13 +260,24 @@ fn buy_policy(
     premium_amount: u64,
     expected_delivery: i64,
 ) -> TransactionResult {
+    buy_policy_with_grace(env, policy_id, payout_amount, premium_amount, expected_delivery, GRACE)
+}
+
+fn buy_policy_with_grace(
+    env: &mut Env,
+    policy_id: u64,
+    payout_amount: u64,
+    premium_amount: u64,
+    expected_delivery: i64,
+    grace_period: i64,
+) -> TransactionResult {
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
         &instruction::BuyPolicy {
             policy_id,
             shipment_id: SHIPMENT_ID,
             expected_delivery,
-            grace_period: GRACE,
+            grace_period,
             payout_amount,
             premium_amount,
         }
@@ -459,10 +470,64 @@ fn buy_policy_rejects_a_deadline_beyond_the_sla_horizon() {
     let mut env = funded_pool(1_000_000 * UNIT);
     let horizon = BASE_TS + freight_delay::MAX_SLA_SECONDS;
 
-    assert!(buy_policy(&mut env, 1, 100_000 * UNIT, 1_000 * UNIT, horizon).is_ok());
-    assert!(buy_policy(&mut env, 2, 100_000 * UNIT, 1_000 * UNIT, horizon + 1).is_err());
-    assert!(buy_policy(&mut env, 3, 100_000 * UNIT, 1_000 * UNIT, i64::MAX).is_err());
+    // The horizon bounds the deadline, quote plus grace, not the quote alone.
+    let last_ok = horizon - GRACE;
+    assert!(buy_policy(&mut env, 1, 100_000 * UNIT, 1_000 * UNIT, last_ok).is_ok());
+    assert!(buy_policy(&mut env, 2, 100_000 * UNIT, 1_000 * UNIT, last_ok + 1).is_err());
+    assert!(buy_policy(&mut env, 3, 100_000 * UNIT, 1_000 * UNIT, horizon).is_err());
+    assert!(buy_policy(&mut env, 4, 100_000 * UNIT, 1_000 * UNIT, i64::MAX).is_err());
+    // A grace period that on its own reaches past the horizon is refused too.
+    assert!(
+        buy_policy_with_grace(&mut env, 5, 100_000 * UNIT, 1_000 * UNIT, BASE_TS + SLA_DELTA, i64::MAX)
+            .is_err()
+    );
     assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 1);
+}
+
+#[test]
+fn buy_policy_rejects_a_policy_id_that_runs_away_from_the_counter() {
+    // The counter only moves up, so an unbounded jump would end the id space for
+    // every later policy and close the pool to new business for good.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    let gap = freight_delay::MAX_POLICY_ID_GAP;
+
+    assert!(buy_policy(&mut env, gap, 100_000 * UNIT, 1_000 * UNIT, BASE_TS + SLA_DELTA).is_ok());
+    assert!(buy_policy(&mut env, gap * 2 + 1, 100_000 * UNIT, 1_000 * UNIT, BASE_TS + SLA_DELTA)
+        .is_err());
+    assert!(buy_policy(&mut env, u64::MAX, 100_000 * UNIT, 1_000 * UNIT, BASE_TS + SLA_DELTA)
+        .is_err());
+    assert_eq!(read_config(&env.svm, &env.config).last_policy_id, gap);
+}
+
+#[test]
+fn initialize_pool_rejects_a_mint_that_is_not_six_decimals() {
+    // Every amount in the program is a USDC base unit: a mint on another scale
+    // would make each premium and payout off by orders of magnitude.
+    let mut env = setup();
+    let odd_mint = CreateMint::new(&mut env.svm, &env.admin).decimals(9).send().unwrap();
+    let config = config_pda(&odd_mint, &env.oracle.pubkey());
+
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::InitializePool {
+            fee_bps: FEE_BPS,
+            keeper: env.admin.pubkey(),
+        }
+        .data(),
+        accounts::InitializePool {
+            admin: env.admin.pubkey(),
+            usdc_mint: odd_mint,
+            oracle_authority: env.oracle.pubkey(),
+            config,
+            treasury: treasury_pda(&config),
+            token_program: TOKEN_ID,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+
+    assert!(send_signed(&mut env.svm, &[&env.admin, &env.oracle], &[ix]).is_err());
+    assert!(env.svm.get_account(&config).is_none());
 }
 
 #[test]

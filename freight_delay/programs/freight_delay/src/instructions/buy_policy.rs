@@ -63,24 +63,21 @@ impl<'info> BuyPolicy<'info> {
         let now = Clock::get()?.unix_timestamp;
         require!(expected_delivery > now, FreightDelayError::InvalidDeadline);
         require!(grace_period >= 0, FreightDelayError::InvalidDeadline);
-        // No timeout path exists, so a deadline the clock cannot reach would lock
-        // the payout for good.
+        // The deadline, not only the quote, has to land inside the horizon: no
+        // timeout path exists, so an unreachable one locks the payout for good.
         let horizon = now
             .checked_add(MAX_SLA_SECONDS)
             .ok_or(FreightDelayError::InvalidDeadline)?;
-        require!(
-            expected_delivery <= horizon,
-            FreightDelayError::InvalidDeadline
-        );
-        // Settlement recomputes this sum, so an unrepresentable one is unsettleable.
-        require!(
-            expected_delivery.checked_add(grace_period).is_some(),
-            FreightDelayError::InvalidDeadline
-        );
+        let deadline = expected_delivery
+            .checked_add(grace_period)
+            .ok_or(FreightDelayError::InvalidDeadline)?;
+        require!(deadline <= horizon, FreightDelayError::InvalidDeadline);
         // `nonce` is the policy id, so a reused id would let an attestation signed
-        // for a closed policy settle a new one.
+        // for a closed policy settle a new one, and a runaway id would spend the
+        // remaining id space out from under every later policy.
         require!(
-            policy_id > self.config.last_policy_id,
+            policy_id > self.config.last_policy_id
+                && policy_id - self.config.last_policy_id <= MAX_POLICY_ID_GAP,
             FreightDelayError::InvalidPolicyId
         );
         self.config.last_policy_id = policy_id;

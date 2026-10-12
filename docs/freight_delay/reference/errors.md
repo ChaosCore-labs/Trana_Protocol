@@ -1,6 +1,6 @@
 # Error Codes
 
-One flat enum, thirteen variants, every one carrying a `#[msg]`. There are no
+One flat enum, fourteen variants, every one carrying a `#[msg]`. There are no
 nested error types and no `anyhow` anywhere in the program.
 
 ```rust
@@ -19,6 +19,7 @@ pub enum FreightDelayError {
     MathOverflow,
     AttestationRejected,
     InvalidPolicyId,
+    InvalidMint,
 }
 ```
 
@@ -31,7 +32,7 @@ Anchor numbers custom errors from 6000, in declaration order.
 | 6000 | `Unauthorized` | Only the configured authority may perform this action. | `withdraw_capital` `lp_position` constraint |
 | 6001 | `InvalidFee` | Fee must be below 10,000 basis points. | `initialize_pool` |
 | 6002 | `InvalidAmount` | Amount must be greater than zero. | `deposit_capital` (twice), `buy_policy` (twice), `withdraw_capital` (twice) |
-| 6003 | `InvalidDeadline` | Expected delivery must be in the future and within the maximum SLA horizon, and grace period non-negative, with a representable deadline. | `buy_policy` |
+| 6003 | `InvalidDeadline` | Expected delivery plus grace period must lie in the future and within the maximum SLA horizon. | `buy_policy` |
 | 6004 | `Insolvent` | Pool is insolvent: locked risk would exceed total capital. | `buy_policy` free-capital gate; `assert_solvent()` |
 | 6005 | `InsufficientFreeCapital` | Pool does not have enough unencumbered capital for this withdrawal, or the withdrawal would leave none while shares remain. | `settle_policy` (triggered), `withdraw_capital` |
 | 6006 | `PolicyNotMature` | Policy has not reached its delivery deadline plus grace period. | `settle_policy` |
@@ -40,7 +41,8 @@ Anchor numbers custom errors from 6000, in declaration order.
 | 6009 | `InsufficientShares` | Not enough shares to redeem. | `withdraw_capital` |
 | 6010 | `MathOverflow` | Arithmetic overflow. | Every `checked_*` money path |
 | 6011 | `AttestationRejected` | Delivery attestation signature is missing or invalid. | `settle_policy` — signature check and nonce check |
-| 6012 | `InvalidPolicyId` | Policy id must be greater than the last one issued for this pool. | `buy_policy` |
+| 6012 | `InvalidPolicyId` | Policy id must be greater than the last one issued for this pool, and within the id window. | `buy_policy` |
+| 6013 | `InvalidMint` | Mint must use 6 decimals. | `initialize_pool` `usdc_mint` constraint |
 
 ## Notes per variant
 
@@ -59,20 +61,32 @@ where a valid input floors to nothing (`shares != 0` after share pricing,
 without inspecting its own arguments.
 
 **`InvalidDeadline` guards the schedule, not the shipment.** It is raised when
-`expected_delivery` is not strictly in the future, when it lies further than
-`MAX_SLA_SECONDS` (one year) ahead of the current time, when `grace_period` is
-negative, or when the two cannot be added without overflowing `i64`. The horizon
-is what keeps every deadline reachable: without it a buyer could quote
-`i64::MAX`, and the maturity gate would then be unreachable for the life of the
-pool, stranding that payout permanently (pre-freeze audit: unreachable deadline). Inside the
+`expected_delivery` is not strictly in the future, when `grace_period` is
+negative, or when the two do not add up to a deadline inside `MAX_SLA_SECONDS`
+(one year) — which also covers a sum that overflows `i64`. The horizon is what
+keeps every deadline reachable: without it a buyer could quote `i64::MAX`, or
+pair a one-day quote with a grace period of centuries, and the maturity gate
+would then be unreachable for the life of the pool, stranding that payout
+permanently (pre-freeze audit: unreachable deadline, unbounded grace). Inside the
 horizon it says nothing about whether the quoted date is realistic — any future
-timestamp up to a year out and any non-negative slack is accepted.
+timestamp and any non-negative slack are accepted as long as the deadline lands
+inside it.
 
 **`InvalidPolicyId` keeps the id spendable exactly once.** `buy_policy` requires
-`policy_id > PoolConfig.last_policy_id` and then records it. The attester's
-`nonce` is the policy id, so ids must never repeat — once a policy's PDA closes
-its address is free again, and a reused id would let an attestation signed for
-the old policy settle the new one on the same shipment.
+`policy_id > PoolConfig.last_policy_id` and no more than `MAX_POLICY_ID_GAP` ahead
+of it, then records it. The attester's `nonce` is the policy id, so ids must never
+repeat — once a policy's PDA closes its address is free again, and a reused id
+would let an attestation signed for the old policy settle the new one on the same
+shipment. The window is what stops the counter being spent in one call: a buyer
+naming `u64::MAX` would end the id space for every later policy and close the pool
+to new business for good.
+
+**`InvalidMint` checks the settlement asset's scale.** `initialize_pool` accepts
+only a mint with `decimals == 6`, because every amount the program handles is a
+USDC base unit; a mint on another scale would make each premium and payout off by
+orders of magnitude. It deliberately says nothing about the mint's authorities:
+canonical USDC keeps a live mint and freeze authority with its issuer, so
+requiring either to be `None` would reject the asset the pool is denominated in.
 
 **`Insolvent` means capital adequacy.** The message describes locked risk
 exceeding total capital, and it is raised both by the `buy_policy` entry gate and

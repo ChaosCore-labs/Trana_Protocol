@@ -10,7 +10,7 @@ Trana_Protocol/
 ├── freight_delay/
 │   ├── programs/freight_delay/
 │   │   ├── src/              # the Anchor program
-│   │   └── tests/            # LiteSVM integration tests (29 tests)
+│   │   └── tests/            # LiteSVM integration tests (31 tests)
 │   ├── runbooks/             # surfpool / txtx deploy scaffolding
 │   └── Anchor.toml
 ├── mise.toml                 # toolchain pins
@@ -56,8 +56,13 @@ protocol, and none of them exists in `src/`:
   the string `unbonding` appears nowhere in the program.
 - **A `TreasuryVault` account struct.** The treasury is an SPL `TokenAccount`
   owned by the token program with the `PoolConfig` PDA as authority.
-- **Any governance or admin setter.** `fee_bps` and `oracle_authority` are fixed
-  at initialisation and cannot be changed. `PoolConfig.admin` is never read.
+- **Any governance or admin setter, including key rotation.** `fee_bps` and
+  `oracle_authority` are fixed at initialisation and cannot be changed, and no
+  instruction replaces the attester or the keeper. `PoolConfig.admin` is never
+  read. The cost is accepted and has been raised by review: a compromised
+  attester key can forge arrivals for the pool's lifetime, and a compromised
+  keeper key can post false history roots, with no on-chain recovery beyond
+  redeploying the program and migrating the capital.
 - **A Project44 / Spire AIS / Switchboard-TEE oracle integration.** No oracle
   program, no TEE, no HTTP. The program verifies an ed25519 signature from the
   key configured at init (`oracle_authority`), but how that attester obtains the
