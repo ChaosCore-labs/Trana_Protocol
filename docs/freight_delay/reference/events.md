@@ -126,6 +126,34 @@ A client reconstructing cash flows must read `triggered` before treating
 `payout_amount` as a payment. This is the easiest way to misread the event
 stream.
 
+## `PolicyClosed`
+
+```rust
+pub struct PolicyClosed {
+    pub config: Pubkey,
+    pub policy: Pubkey,
+    pub shipper: Pubkey,
+    pub beneficiary: Pubkey,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium: u64,
+    pub outcome: PolicyOutcome,
+    pub decided_at: i64,
+    pub decided_at_slot: u64,
+}
+```
+
+The terminal event, emitted by `settle_policy` immediately before it closes the
+`Policy` PDA and returns the rent to the shipper (CHA-18). It carries the full
+terms, so a policy's lifecycle stays reconstructible once the account is gone:
+this record plus `DeliveryAttested` is the leaf format for the off-chain history
+batches, and the chain log remains the availability backstop.
+
+`outcome` is `PaidLate` or `ClosedOnTime`. There is no `PolicyVoided`: the program
+has no timeout path (CHA-15), so a policy cannot end any other way.
+
 ## `CapitalWithdrawn`
 
 ```rust

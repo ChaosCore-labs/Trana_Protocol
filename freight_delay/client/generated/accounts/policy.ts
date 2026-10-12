@@ -15,7 +15,10 @@ export function getPolicyDiscriminatorBytes(): ReadonlyUint8Array { return fixEn
 export type Policy = { discriminator: ReadonlyUint8Array; insured: Address; policyId: bigint; 
 /** Bill of lading / container identifier, matched against a settlement attestation. */
 shipmentId: bigint; 
-/** SLA delivery timestamp the shipment was quoted. */
+/**
+ * SLA timestamp the shipment was quoted: the **destination-terminal arrival**
+ * the attester measures against, not a door-delivery time (CHA-33).
+ */
 expectedDelivery: bigint; 
 /**
  * Slack after `expected_delivery` before a late arrival triggers a payout.
@@ -27,7 +30,10 @@ gracePeriod: bigint; payoutAmount: bigint; premiumAmount: bigint; isSettled: boo
 export type PolicyArgs = { insured: Address; policyId: number | bigint; 
 /** Bill of lading / container identifier, matched against a settlement attestation. */
 shipmentId: number | bigint; 
-/** SLA delivery timestamp the shipment was quoted. */
+/**
+ * SLA timestamp the shipment was quoted: the **destination-terminal arrival**
+ * the attester measures against, not a door-delivery time (CHA-33).
+ */
 expectedDelivery: number | bigint; 
 /**
  * Slack after `expected_delivery` before a late arrival triggers a payout.

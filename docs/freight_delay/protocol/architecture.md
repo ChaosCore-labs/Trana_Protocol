@@ -157,7 +157,7 @@ programs/freight_delay/src/
 ├── lib.rs                           # declare_id!, #[program] mod freight_delay — forwarding only
 ├── constants.rs                     # 4 seed literals + FEE_DENOMINATOR
 ├── error.rs                         # FreightDelayError — 12 flat variants
-├── events.rs                        # six events
+├── events.rs                        # seven events
 ├── instructions.rs                  # pub mod + pub use registry
 ├── state.rs                         # PoolConfig, LpPosition, Policy
 └── instructions/

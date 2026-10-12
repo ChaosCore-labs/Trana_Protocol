@@ -98,6 +98,13 @@ impl<'info> WithdrawCapital<'info> {
             total_capital: self.config.total_capital,
         });
 
+        // A position with no shares left is dead weight: close it and return the
+        // rent to the LP. `deposit_capital` recreates it via `init_if_needed`, so
+        // an LP that comes back gets a fresh position at the same address.
+        if self.lp_position.shares == 0 {
+            self.lp_position.close(self.lp.to_account_info())?;
+        }
+
         Ok(())
     }
 }

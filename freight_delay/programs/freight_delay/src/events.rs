@@ -57,6 +57,37 @@ pub struct PolicySettled {
     pub grace_period: i64,
 }
 
+/// The settled outcome of a policy, frozen into the `PolicyClosed` terminal event.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PolicyOutcome {
+    /// Arrived past the deadline: the shipper was paid.
+    PaidLate,
+    /// Arrived within the deadline plus grace: the risk was released unpaid.
+    ClosedOnTime,
+}
+
+/// The terminal event for a policy, emitted immediately before its PDA is closed
+/// and the rent returned to the shipper (CHA-18).
+///
+/// Carries the full terms, so a policy's lifecycle stays reconstructible from
+/// events alone once the account is gone: this is the leaf format for the
+/// off-chain history batches, and the chain log is the availability backstop.
+#[event]
+pub struct PolicyClosed {
+    pub config: Pubkey,
+    pub policy: Pubkey,
+    pub shipper: Pubkey,
+    pub beneficiary: Pubkey,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium: u64,
+    pub outcome: PolicyOutcome,
+    pub decided_at: i64,
+    pub decided_at_slot: u64,
+}
+
 #[event]
 pub struct CapitalWithdrawn {
     pub config: Pubkey,

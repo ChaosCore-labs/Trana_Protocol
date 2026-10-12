@@ -24,13 +24,14 @@ if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Arr
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT, { accountData: data, programName: "freightDelay" });
 }
 
-export enum FreightDelayEvent { CapitalDeposited, CapitalWithdrawn, DeliveryAttested, PolicyPurchased, PolicySettled, PoolInitialized }
+export enum FreightDelayEvent { CapitalDeposited, CapitalWithdrawn, DeliveryAttested, PolicyClosed, PolicyPurchased, PolicySettled, PoolInitialized }
 
 export function identifyFreightDelayEvent(event: { data: ReadonlyUint8Array } | ReadonlyUint8Array): FreightDelayEvent {
     const data = 'data' in event ? event.data : event;
     if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([193, 124, 182, 129, 144, 1, 221, 53])), 0)) { return FreightDelayEvent.CapitalDeposited; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([202, 30, 139, 204, 45, 210, 182, 244])), 0)) { return FreightDelayEvent.CapitalWithdrawn; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([176, 51, 165, 188, 134, 94, 213, 249])), 0)) { return FreightDelayEvent.DeliveryAttested; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([19, 126, 82, 173, 79, 86, 50, 51])), 0)) { return FreightDelayEvent.PolicyClosed; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([120, 100, 255, 218, 16, 36, 194, 192])), 0)) { return FreightDelayEvent.PolicyPurchased; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([67, 45, 149, 235, 199, 184, 83, 77])), 0)) { return FreightDelayEvent.PolicySettled; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([100, 118, 173, 87, 12, 198, 254, 229])), 0)) { return FreightDelayEvent.PoolInitialized; }

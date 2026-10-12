@@ -128,6 +128,9 @@ supplies the attested shipment and its ed25519 signature, and must also include
 the ed25519 precompile instruction that carries that signature, earlier in the
 same transaction.
 
+- **Accounts:** the policy PDA, the pool's treasury and the shipper's ATA — plus
+  the shipper's own wallet as `insured`, pinned to `policy.insured` because the
+  closed policy's rent is paid to it.
 - **Guards, in order:** `!policy.is_settled`;
   `Clock::unix_timestamp >= policy.expected_delivery + policy.grace_period`;
   `attestation.shipment_id == policy.shipment_id`;
@@ -142,8 +145,10 @@ same transaction.
 - **Effect, always:** `total_locked_risk -= payout_amount`, `policy.is_settled = true`.
 - **Effect, on trigger:** `total_capital -= payout_amount`,
   `policy.is_paid = true`, and `transfer_from_treasury(payout)` to the shipper's ATA.
-- **Ends with:** `assert_solvent()`.
+- **Ends with:** `assert_solvent()`, then the policy PDA is **closed** and its rent
+  returns to the shipper.
 - **Event:** `PolicySettled { config, policy, insured, triggered, payout_amount, actual_delivery, expected_delivery, grace_period }`
+- **Event:** `PolicyClosed { config, policy, shipper, beneficiary, shipment_id, expected_delivery, grace_period, payout_amount, premium, outcome, decided_at, decided_at_slot }` — the terminal record, emitted immediately before the close.
 
 Notes that are easy to get wrong:
 
@@ -160,8 +165,8 @@ signature would settle a policy the attester never saw.
 
 The `nonce` is the **within-pool** defence. It is part of the signed message, and
 the handler requires `nonce == policy.policy_id`, so a signature can only ever
-settle the policy it was minted for; `is_settled` then blocks settling that
-policy a second time.
+settle the policy it was minted for; `is_settled` blocks a second settlement, and
+the PDA is closed after the first, so a replay cannot even load the account.
 
 The signature check is a *scan*, not a cryptographic call. It reads the
 instruction sysvar, walks the instructions before `settle_policy`, and accepts
@@ -179,9 +184,10 @@ Replay within a pool is stopped by the `nonce`, and replay across pools by the
 pool prefix — see above. What the scan adds is *relevance*: the signature must
 have been checked by the precompile in this very transaction.
 
-Given an attested arrival, the risk is released on **both** branches. A
-non-triggered settle leaves `is_settled = true, is_paid = false` and returns the
-capital to free capacity.
+Given an attested arrival, the risk is released on **both** branches, and either
+branch closes the policy PDA: `PolicyClosed.outcome` is `PaidLate` or
+`ClosedOnTime`. A non-triggered settle transfers nothing and returns the capital
+to free capacity.
 
 The deadline is computed at settlement time as
 `expected_delivery + grace_period`, with the addition wrapped in `checked_add`.

@@ -300,6 +300,7 @@ fn signed_attestation(
             usdc_mint: env.usdc_mint,
             treasury: env.treasury,
             policy: policy_pda(&env.config, 1),
+            insured: env.shipper.pubkey(),
             insured_usdc: env.shipper_usdc,
             instructions: solana_instructions_sysvar::ID,
             token_program: TOKEN_ID,
@@ -547,6 +548,7 @@ fn settle_pays_shipper_on_late_delivery() {
     let late = deadline() + 100;
 
     let shipper_before = balance(&env.svm, &env.shipper_usdc);
+    let shipper_sol_before = env.svm.get_account(&env.shipper.pubkey()).unwrap().lamports;
     set_ts(&mut env.svm, deadline() + 1);
 
     let res = settle_policy(&mut env, 1, late);
@@ -566,14 +568,28 @@ fn settle_pays_shipper_on_late_delivery() {
         shipper_before + payout
     );
 
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-    assert!(policy.is_settled);
-    assert!(policy.is_paid);
+    // The policy PDA is closed on settlement; `PolicyClosed` is the record and
+    // the rent comes home to the shipper.
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "a settled policy is closed"
+    );
+    assert!(
+        env.svm.get_account(&env.shipper.pubkey()).unwrap().lamports > shipper_sol_before,
+        "the policy rent returns to the shipper"
+    );
 
     let event: events::PolicySettled = parse_event(&res);
     assert!(event.triggered);
     assert_eq!(event.payout_amount, payout);
     assert_eq!(event.actual_delivery, late);
+
+    let closed: events::PolicyClosed = parse_event(&res);
+    assert_eq!(closed.policy, policy_pda(&env.config, 1));
+    assert_eq!(closed.shipper, env.shipper.pubkey());
+    assert_eq!(closed.outcome, events::PolicyOutcome::PaidLate);
+    assert_eq!(closed.payout_amount, payout);
+    assert_eq!(closed.premium, premium);
 }
 
 #[test]
@@ -598,12 +614,16 @@ fn settle_releases_risk_when_within_grace() {
     assert_eq!(config.total_capital, capital + premium - fee);
     assert_eq!(balance(&env.svm, &env.shipper_usdc), shipper_before);
 
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-    assert!(policy.is_settled);
-    assert!(!policy.is_paid);
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "an on-time settle closes the policy too"
+    );
 
     let event: events::PolicySettled = parse_event(&res);
     assert!(!event.triggered);
+
+    let closed: events::PolicyClosed = parse_event(&res);
+    assert_eq!(closed.outcome, events::PolicyOutcome::ClosedOnTime);
 }
 
 #[test]
@@ -662,6 +682,36 @@ fn withdraw_capital_returns_usdc_and_burns_shares() {
     let event: events::CapitalWithdrawn = parse_event(&res);
     assert_eq!(event.shares_burned, shares);
     assert_eq!(event.amount, shares);
+}
+
+#[test]
+fn withdraw_capital_closes_a_position_that_reaches_zero_shares() {
+    // A position is only worth its rent while it has shares: redeeming the last
+    // one closes the account and returns the rent to the LP (CHA-18).
+    let capital = 1_000_000 * UNIT;
+    let mut env = funded_pool(capital);
+    let position = lp_position_pda(&env.config, &env.lp.pubkey());
+
+    // A partial withdrawal leaves the position open.
+    assert!(withdraw_capital(&mut env, 400_000 * UNIT).is_ok());
+    assert!(
+        env.svm.get_account(&position).is_some(),
+        "a position with shares left must stay open"
+    );
+
+    // Burning the last share closes it. The rent (over a million lamports for 49
+    // bytes) dwarfs the 5000-lamport fee, so the LP's balance still rises.
+    let lp_before = env.svm.get_account(&env.lp.pubkey()).unwrap().lamports;
+    assert!(withdraw_capital(&mut env, 600_000 * UNIT).is_ok());
+    assert!(
+        env.svm.get_account(&position).is_none(),
+        "a zero-share position must be closed"
+    );
+    assert!(env.svm.get_account(&env.lp.pubkey()).unwrap().lamports > lp_before);
+
+    // The same LP can deposit again: `init_if_needed` recreates the account.
+    assert!(deposit_capital(&mut env, 100_000 * UNIT).is_ok());
+    assert!(env.svm.get_account(&position).is_some());
 }
 
 #[test]
@@ -848,10 +898,10 @@ fn settle_releases_locked_risk_without_any_timeout_path() {
     );
 
     let after = read_config(&env.svm, &env.config);
-    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
-
-    assert!(policy.is_settled, "settled");
-    assert!(!policy.is_paid, "the arrival was within grace, so no payout");
+    assert!(
+        env.svm.get_account(&policy_pda(&env.config, 1)).is_none(),
+        "the settled policy is closed"
+    );
     assert_eq!(
         after.total_locked_risk,
         before.total_locked_risk - 500_000 * UNIT,

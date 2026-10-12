@@ -45,7 +45,8 @@ refuse a valid purchase, but it can never admit an invalid one.
 **`total_locked_risk` cannot underflow.** `settle_policy` subtracts a policy's
 `payout_amount` from the aggregate. That is safe because `total_locked_risk` is
 exactly the sum over unsettled policies: `buy_policy` adds each policy's payout
-once, and `settle_policy` removes it exactly once (guarded by `is_settled`). No
+once, and `settle_policy` removes it exactly once (guarded by `is_settled`, and
+the policy PDA is closed at settlement, so it can never run twice). No
 other handler touches the field. The subtraction is nonetheless wrapped in
 `checked_sub`, mapping any violation to `MathOverflow` rather than silently
 wrapping — the program treats "this should be impossible" as an error, not an
@@ -89,9 +90,10 @@ together. A position cannot be drained by anyone but its owner: the PDA seeds
 ### Risk is released exactly once per policy
 
 `is_settled` is checked at the top of `settle_policy` and set to true at the
-bottom, and nothing resets it. A policy therefore releases its locked risk once,
-whether or not it pays. Double settlement is rejected with
-`PolicyAlreadySettled`; the test suite asserts this.
+bottom. A policy therefore releases its locked risk once, whether or not it pays,
+and the instruction then closes the policy PDA (CHA-18) — so a second settlement
+cannot even load the account, and `PolicyAlreadySettled` is the belt to that
+braces. The test suite asserts both.
 
 ## What the invariant does *not* cover
 

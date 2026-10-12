@@ -26,7 +26,7 @@ import {
   deliveryInstructions,
   depositCapital,
   initializePool,
-  readPolicy,
+  policyPda,
   readPool,
   treasuryPda,
   type Harness,
@@ -234,12 +234,15 @@ for (const s of scenarios) {
   await client.sendTransaction(instructions);
 
   const after = await readPool(h);
-  const policy = await readPolicy(h, s.id);
+  // Settlement closes the policy PDA: the account is gone, and the terminal
+  // record lives in the PolicyClosed event (CHA-18).
+  const closed = await client.rpc
+    .getAccountInfo(await policyPda(h.programId, h.config, s.id))
+    .send();
 
   console.log(`  arrival ${iso(arrival)} (deadline ${iso(due)}, ${s.offset > 0 ? "+" : ""}${s.offset / DAY}d)`);
   report("after settle_policy", after);
-  check("settled", policy.isSettled);
-  check(`is_paid = ${s.pays}`, policy.isPaid === s.pays);
+  check("policy closed", closed.value === null);
   check("lock released", after.totalLockedRisk === before.totalLockedRisk - PAYOUT);
   check(
     s.pays ? "capital debited by the payout" : "capital unchanged",

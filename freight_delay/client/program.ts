@@ -182,6 +182,7 @@ export async function settlePolicy(
       usdcMint: h.usdcMint,
       treasury: h.treasury,
       policy: await policyPda(h.programId, h.config, a.policyId),
+      insured: a.insured,
       insuredUsdc: await ataFor(a.insured, h.usdcMint),
       instructions: SYSVAR_INSTRUCTIONS_ADDRESS,
       shipmentId,

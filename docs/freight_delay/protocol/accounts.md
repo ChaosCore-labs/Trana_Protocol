@@ -85,6 +85,11 @@ Seeds `[b"policy", config, policy_id_le]`. Note the little-endian encoding of
 `policy_id`; the ID is chosen by the buyer, so any caller can mint any
 unclaimed ID.
 
+The account is **closed at settlement** (CHA-18): `settle_policy` emits
+`PolicyClosed` and sends the account's rent to the shipper. The chain events, not
+this account, are the permanent record — nothing else stores the policy's terms
+once the PDA is gone.
+
 | Field | Type | Bytes | Meaning |
 |---|---|---|---|
 | `insured` | `Pubkey` | 32 | Payout recipient; also the account constraint at settlement |
@@ -99,9 +104,11 @@ unclaimed ID.
 | `bump` | `u8` | 1 | PDA bump |
 | | | **83** | `space = 8 + 83 = 91` |
 
-`is_settled` and `is_paid` are not redundant. A policy that settles without a
-trigger ends with `is_settled = true, is_paid = false` — the risk was released
-without a transfer. `is_paid` is write-once-true and never reset.
+`is_settled` and `is_paid` are not redundant while the account is live. A policy
+that settles without a trigger ends with `is_settled = true, is_paid = false` —
+the risk was released without a transfer. Neither flag outlives settlement: the
+PDA is closed (CHA-18), so both are only ever read during the settling
+transaction.
 
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
 settlement time rather than stored. Neither term is validated for realism: any

@@ -64,6 +64,8 @@ sequenceDiagram
     Program->>Program: mark settled
     Program-->>Crank: DeliveryAttested
     Program-->>Crank: PolicySettled
+    Program-->>Crank: PolicyClosed
+    Program->>Program: close the policy PDA, rent to the shipper
     end
 
     rect rgb(137, 180, 130, 0.12)
@@ -127,7 +129,8 @@ stateDiagram-v2
     OnTime --> [*]
 ```
 
-`Late` and `OnTime` are both terminal, distinguished by the `is_paid` flag.
+`Late` and `OnTime` are both terminal, and both close the PDA: `PolicyClosed`
+records which outcome it was.
 
 `Placed` is the transient state. Both transitions out of it require a valid
 signed attestation, but every policy acquires one option to leave: once

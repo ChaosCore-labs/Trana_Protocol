@@ -9,6 +9,7 @@
 export * from './capitalDeposited.ts';
 export * from './capitalWithdrawn.ts';
 export * from './deliveryAttested.ts';
+export * from './policyClosed.ts';
 export * from './policyPurchased.ts';
 export * from './policySettled.ts';
 export * from './poolInitialized.ts';

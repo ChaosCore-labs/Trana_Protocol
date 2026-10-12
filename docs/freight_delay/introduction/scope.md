@@ -28,7 +28,7 @@ indexer, no API service, and no on-chain oracle integration.
 | Instructions | 5 | `initialize_pool`, `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital` |
 | Account types | 3 | `PoolConfig`, `LpPosition`, `Policy` |
 | Error variants | 12 | One flat `FreightDelayError` enum |
-| Events | 6 | One per instruction, plus `DeliveryAttested` |
+| Events | 7 | One per instruction, plus `DeliveryAttested` and `PolicyClosed` |
 | Outbound CPIs | 1 | `transfer_from_treasury`, SPL Token `transfer_checked` |
 
 ## What is explicitly *not* implemented
