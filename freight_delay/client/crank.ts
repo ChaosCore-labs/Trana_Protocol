@@ -28,6 +28,8 @@ export interface CrankResult {
   settled: bigint[];
   /** Live policies left alone, with why. */
   skipped: { policyId: bigint; reason: "immature" | "no-arrival" | "other-pool" }[];
+  /** Policies this run tried and could not settle, with the error. */
+  failed: { policyId: bigint; error: string }[];
 }
 
 export async function settleMaturedPolicies(
@@ -44,6 +46,7 @@ export async function settleMaturedPolicies(
 
   const settled: bigint[] = [];
   const skipped: CrankResult["skipped"] = [];
+  const failed: CrankResult["failed"] = [];
 
   for (const { pubkey, account } of accounts) {
     const [data] = account.data;
@@ -65,25 +68,37 @@ export async function settleMaturedPolicies(
       continue;
     }
 
-    const arrival = await opts.source.fetch(policy.shipmentId);
+    let arrival;
+    try {
+      arrival = await opts.source.fetch(policy.shipmentId);
+    } catch (error) {
+      failed.push({ policyId: policy.policyId, error: String(error) });
+      continue;
+    }
     if (!arrival) {
       skipped.push({ policyId: policy.policyId, reason: "no-arrival" });
       continue;
     }
 
-    const { instructions } = await deliveryInstructions(h, {
-      privateKey: opts.privateKey,
-      publicKey: opts.attesterPublicKey,
-      shipmentId: policy.shipmentId,
-      actualDelivery: arrival.actualDelivery,
-      terminalCode: arrival.terminalCode,
-      nonce: policy.policyId,
-      crank: opts.crank,
-      insured: policy.insured,
-    });
-    await opts.send(instructions);
-    settled.push(policy.policyId);
+    try {
+      const { instructions } = await deliveryInstructions(h, {
+        privateKey: opts.privateKey,
+        publicKey: opts.attesterPublicKey,
+        shipmentId: policy.shipmentId,
+        actualDelivery: arrival.actualDelivery,
+        terminalCode: arrival.terminalCode,
+        nonce: policy.policyId,
+        crank: opts.crank,
+        insured: policy.insured,
+      });
+      await opts.send(instructions);
+      settled.push(policy.policyId);
+    } catch (error) {
+      // Another crank may have settled it after our scan. Record and keep going:
+      // one bad policy must not strand every later policy's capital.
+      failed.push({ policyId: policy.policyId, error: String(error) });
+    }
   }
 
-  return { settled, skipped };
+  return { settled, skipped, failed };
 }

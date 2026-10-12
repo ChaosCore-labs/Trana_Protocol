@@ -267,7 +267,7 @@ const source = new SimulatedSource({
     "27": { actualDelivery: expectedDelivery - BigInt(DAY), terminalCode: 4201n },
   },
 });
-const { settled, skipped } = await settleMaturedPolicies(h, {
+const { settled, skipped, failed } = await settleMaturedPolicies(h, {
   privateKey: ATTESTER_KEY,
   attesterPublicKey: ATTESTER_PUBKEY,
   crank: admin,
@@ -280,6 +280,7 @@ check(
   "crank skipped only unsettleable policies",
   skipped.every((s) => s.reason === "immature" || s.reason === "no-arrival"),
 );
+check("crank had no failures", failed.length === 0);
 const openAfter = await readPool(h);
 report("after the crank", openAfter);
 check("lock released", openAfter.totalLockedRisk === openBefore.totalLockedRisk - PAYOUT);
