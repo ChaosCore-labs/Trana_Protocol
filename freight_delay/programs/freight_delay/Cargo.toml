@@ -21,8 +21,8 @@ custom-panic = []
 
 
 [dependencies]
-anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
-anchor-spl = "1.2.0"
+anchor-lang = { version = "1.2.1", features = ["init-if-needed"] }
+anchor-spl = "1.2.1"
 # Already in the tree via anchor-lang; added directly to read the instruction
 # sysvar and bind a signed attestation to the current transaction (CHA-16).
 solana-instructions-sysvar = "3.0.1"

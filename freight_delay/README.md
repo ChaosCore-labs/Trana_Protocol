@@ -59,7 +59,7 @@ freight_delay/
 ├── Cargo.toml                # workspace + release profile
 ├── txtx.yml                  # localnet / devnet environments for the deploy runbook
 ├── programs/freight_delay/
-│   ├── Cargo.toml            # anchor-lang + anchor-spl 1.2.0, LiteSVM dev-deps
+│   ├── Cargo.toml            # anchor-lang + anchor-spl 1.2.1, LiteSVM dev-deps
 │   ├── src/
 │   │   ├── lib.rs            # #[program] — six instructions, forwarding ctx.bumps
 │   │   ├── instructions.rs   # flat `pub mod` + `pub use` list
@@ -93,8 +93,8 @@ The Anchor pin is the `otter-sec/anchor` fork, and the Rust channel plus
 components come from `../rust-toolchain.toml`. `sccache` is wired in as the
 `rustc-wrapper` through `../.cargo/config.toml`.
 
-Program dependencies are deliberately narrow: `anchor-lang` 1.2.0 (with
-`init-if-needed`, used only by `deposit_capital`) and `anchor-spl` 1.2.0, plus
+Program dependencies are deliberately narrow: `anchor-lang` 1.2.1 (with
+`init-if-needed`, used only by `deposit_capital`) and `anchor-spl` 1.2.1, plus
 `solana-instructions-sysvar` and `solana-sdk-ids` — both already in the tree via
 `anchor-lang`, pulled in directly so the sysvar binding and the ed25519 program id
 come from crates rather than literals. The
