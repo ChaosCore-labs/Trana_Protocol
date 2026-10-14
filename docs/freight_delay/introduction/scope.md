@@ -77,6 +77,17 @@ protocol, and none of them exists in `src/`:
 - **A refund or timeout for unsettleable policies.** If a shipment is never
   attested, the locked risk is permanent.
 - **A crank incentive.** Settlement is permissionless and unpaid.
+- **A transfer path for LP shares.** `LpPosition` is seeded by the LP's own key
+  (`[lp_position, config, lp]`) and no instruction moves it, so a position cannot
+  be sold or transferred, and no token represents a share.
+  [RWA & Tokenisation Notes](../appendix/tokenisation) records the idea and what it
+  would touch.
+- **Any zero-knowledge component.** No circuit, no verifier, no proof-system
+  dependency. ZK is being **looked into** as a possible complementary feature —
+  for confidential policy terms, or for an arrival attestation that trusts a key
+  for less — and is **not planned**. [ZK Research Notes](../appendix/zk-research)
+  records where it would attach, what it would cost, and which cheaper options
+  come first.
 
 The [LOI vs Code](/freight_delay/appendix/loi-divergences) appendix lists these
 divergences against the specific sections of the design document that claim

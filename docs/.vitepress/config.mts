@@ -83,6 +83,8 @@ export default defineConfig({
           items: [
             { text: 'LOI vs Code', link: '/freight_delay/appendix/loi-divergences' },
             { text: 'Open Findings', link: '/freight_delay/appendix/open-findings' },
+            { text: 'ZK Research', link: '/freight_delay/appendix/zk-research' },
+            { text: 'RWA & Tokenisation', link: '/freight_delay/appendix/tokenisation' },
           ],
         },
       ],
