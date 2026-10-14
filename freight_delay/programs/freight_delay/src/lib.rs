@@ -31,29 +31,8 @@ pub mod freight_delay {
         ctx.accounts.deposit_capital(amount, ctx.bumps)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn get_quote(
-        ctx: Context<GetQuote>,
-        quote_id: u64,
-        shipment_id: u64,
-        expected_delivery: i64,
-        grace_period: i64,
-        payout_amount: u64,
-        premium_amount: u64,
-        buyer: Pubkey,
-        expires_at: i64,
-    ) -> Result<()> {
-        ctx.accounts.get_quote(
-            quote_id,
-            shipment_id,
-            expected_delivery,
-            grace_period,
-            payout_amount,
-            premium_amount,
-            buyer,
-            expires_at,
-            ctx.bumps,
-        )
+    pub fn get_quote(ctx: Context<GetQuote>, terms: QuoteTerms) -> Result<()> {
+        ctx.accounts.get_quote(terms, ctx.bumps)
     }
 
     pub fn buy_policy(ctx: Context<BuyPolicy>, policy_id: u64, quote_id: u64) -> Result<()> {

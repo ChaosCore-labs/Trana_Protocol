@@ -119,7 +119,7 @@ is.
 
 ## Test evidence
 
-![LiteSVM suite: 38 tests passed](assets/tests-nextest.webp)
+![LiteSVM suite: 45 tests passed](assets/tests-nextest.webp)
 
 ![Devnet end-to-end run: all checks passed](assets/devnet-e2e.webp)
 

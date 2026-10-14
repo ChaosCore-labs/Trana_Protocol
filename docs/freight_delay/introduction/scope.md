@@ -10,7 +10,7 @@ Trana_Protocol/
 ├── freight_delay/
 │   ├── programs/freight_delay/
 │   │   ├── src/              # the Anchor program
-│   │   └── tests/            # LiteSVM integration tests (31 tests)
+│   │   └── tests/            # LiteSVM integration tests (38 tests)
 │   ├── runbooks/             # surfpool / txtx deploy scaffolding
 │   └── Anchor.toml
 ├── mise.toml                 # toolchain pins
@@ -96,7 +96,9 @@ addresses; `Anchor.toml` defaults to `localnet`, so a devnet deploy passes
 
 The build that added `get_quote` grew `PoolConfig` by one key (`underwriter`), so
 a pool created by an earlier build has the wrong account size and must be
-re-initialised rather than reused.
+re-initialised rather than reused. That build is what devnet runs: the program was
+upgraded in place on 2026-10-14 (slot `510913195`, ProgramData auto-extended to
+330,704 bytes), and every pool the earlier build created is now unreadable.
 
 The devnet walkthrough (`freight_delay/scripts/devnet-e2e.ts`) is the only code here
 that spends anything, and it spends nothing of value: it creates its own 6-decimal SPL

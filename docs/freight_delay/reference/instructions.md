@@ -32,7 +32,7 @@ instruction.
 `init_if_needed` is the only use of that constraint in the program, which is why
 the `anchor-lang` `init-if-needed` feature is enabled.
 
-## `get_quote(quote_id: u64, shipment_id: u64, expected_delivery: i64, grace_period: i64, payout_amount: u64, premium_amount: u64, buyer: Pubkey, expires_at: i64)`
+## `get_quote(terms: QuoteTerms)`
 
 | Account | Flags | Constraints |
 |---|---|---|
@@ -41,8 +41,16 @@ the `anchor-lang` `init-if-needed` feature is enabled.
 | `quote` | `mut`, **init** | `seeds = [quote, config, quote_id]`, `payer = underwriter`, `space = 8 + Quote::INIT_SPACE` |
 | `system_program` | read | — |
 
-`quote_id` appears in the seeds, so `#[instruction(quote_id: u64)]` is required on
-the struct. No token account and no mint: authoring terms moves no capital.
+`QuoteTerms` carries `quote_id`, `shipment_id`, `expected_delivery`,
+`grace_period`, `payout_amount`, `premium_amount`, `buyer` and `expires_at`; only
+`quote_id` is used in the seeds, so the struct needs
+`#[instruction(terms: QuoteTerms)]` and the seed reads `terms.quote_id`. No token
+account and no mint: authoring terms moves no capital.
+
+The IDL keeps that shape — one argument named `terms`, of defined type
+`QuoteTerms` — while Codama flattens it for the generated client, so a TypeScript
+caller still passes `quoteId`, `shipmentId`, … as top-level fields, exactly as it
+did when they were separate instruction arguments.
 
 A quote is the only place a price enters the program, which is why the
 `underwriter` constraint carries `FreightDelayError::Unauthorized` while the other

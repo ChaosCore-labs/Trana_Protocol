@@ -25,6 +25,7 @@ no frontend, SDK, or indexer.
 | ProgramData | `2kd8QbYc9EA2EjTibvzBU9i7KFwHdGTY4gakNeT6SauV` |
 | Upgrade authority | `9aDCHGpiQdGber46fa2hXCC1wYp3bu4f28Tc5fV26fzo` |
 | Deployed | 2026-10-12, slot `510345988`, 304,344 bytes of program data |
+| Last upgraded | 2026-10-14, slot `510913195`, 330,704 bytes — the `get_quote` / `Quote` build |
 
 [Program on Solana Explorer](https://explorer.solana.com/address/4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs?cluster=devnet)
 
@@ -47,7 +48,7 @@ Everything green is reproducible with two commands:
 | LiteSVM suite (in-process, the same `.so` the deploy ships) | `anchor build && cargo nextest run` | **45 passed**, 0 failed |
 | Devnet end-to-end: `initialize_pool` → `deposit_capital` → `get_quote` + `buy_policy` ×2 → `settle_policy` (late + on-time) → `post_root` | `bun run devnet-e2e` | **all checks passed on devnet** |
 
-![LiteSVM suite: 38 tests passed](freight_delay/assets/tests-nextest.webp)
+![LiteSVM suite: 45 tests passed](freight_delay/assets/tests-nextest.webp)
 
 ![Devnet end-to-end run: all checks passed](freight_delay/assets/devnet-e2e.webp)
 

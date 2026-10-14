@@ -92,18 +92,15 @@ Authors the terms a policy is later sold on. Only the pool's `underwriter` may
 call it, so the price enters the protocol here and nowhere else.
 
 ```rust
-pub fn get_quote(
-    ctx: Context<GetQuote>,
-    quote_id: u64,
-    shipment_id: u64,
-    expected_delivery: i64,
-    grace_period: i64,
-    payout_amount: u64,
-    premium_amount: u64,
-    buyer: Pubkey,
-    expires_at: i64,
-) -> Result<()>
+pub fn get_quote(ctx: Context<GetQuote>, terms: QuoteTerms) -> Result<()>
 ```
+
+The eight terms ride in one `QuoteTerms` argument — the same shape
+`settle_policy` uses for `DeliveryAttestation` — so a call site reads as a single
+offer rather than a row of positional numbers. Its fields are `quote_id`,
+`shipment_id`, `expected_delivery`, `grace_period`, `payout_amount`,
+`premium_amount`, `buyer` and `expires_at`, and only `quote_id` is consulted by the
+account constraints.
 
 - **Signer:** `underwriter`, pinned to `config.underwriter`.
 - **Guards, in order:** `payout_amount != 0`; `premium_amount != 0`;

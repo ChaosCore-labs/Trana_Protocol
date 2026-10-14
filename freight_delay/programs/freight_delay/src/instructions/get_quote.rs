@@ -7,8 +7,23 @@ use crate::{
     state::{PoolConfig, Quote},
 };
 
+/// The terms `get_quote` authors, passed as one argument. An offer is a single
+/// object, and eight positional numbers say less at a call site than one name.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct QuoteTerms {
+    pub quote_id: u64,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium_amount: u64,
+    /// `Pubkey::default()` leaves the quote open to any buyer.
+    pub buyer: Pubkey,
+    pub expires_at: i64,
+}
+
 #[derive(Accounts)]
-#[instruction(quote_id: u64)]
+#[instruction(terms: QuoteTerms)]
 pub struct GetQuote<'info> {
     #[account(mut)]
     pub underwriter: Signer<'info>,
@@ -21,7 +36,7 @@ pub struct GetQuote<'info> {
     #[account(
         init,
         payer = underwriter,
-        seeds = [QUOTE_SEED, config.key().as_ref(), quote_id.to_le_bytes().as_ref()],
+        seeds = [QUOTE_SEED, config.key().as_ref(), terms.quote_id.to_le_bytes().as_ref()],
         bump,
         space = 8 + Quote::INIT_SPACE,
     )]
@@ -30,19 +45,18 @@ pub struct GetQuote<'info> {
 }
 
 impl<'info> GetQuote<'info> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn get_quote(
-        &mut self,
-        quote_id: u64,
-        shipment_id: u64,
-        expected_delivery: i64,
-        grace_period: i64,
-        payout_amount: u64,
-        premium_amount: u64,
-        buyer: Pubkey,
-        expires_at: i64,
-        bumps: GetQuoteBumps,
-    ) -> Result<()> {
+    pub fn get_quote(&mut self, terms: QuoteTerms, bumps: GetQuoteBumps) -> Result<()> {
+        let QuoteTerms {
+            quote_id,
+            shipment_id,
+            expected_delivery,
+            grace_period,
+            payout_amount,
+            premium_amount,
+            buyer,
+            expires_at,
+        } = terms;
+
         require_neq!(payout_amount, 0, FreightDelayError::InvalidAmount);
         require_neq!(premium_amount, 0, FreightDelayError::InvalidAmount);
 

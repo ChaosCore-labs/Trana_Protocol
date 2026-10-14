@@ -6,7 +6,7 @@ use anchor_lang::{
 };
 use solana_ed25519_program::new_ed25519_instruction_with_signature;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use freight_delay::{accounts, events, instruction, instructions::shared::DeliveryAttestation};
+use freight_delay::{accounts, events, instruction, instructions::QuoteTerms, instructions::shared::DeliveryAttestation};
 use litesvm::{LiteSVM, types::TransactionResult};
 use litesvm_token::{
     CreateAssociatedTokenAccount, CreateMint, MintToChecked, TOKEN_ID, get_spl_account, spl_token,
@@ -285,14 +285,16 @@ fn author_quote(
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
         &instruction::GetQuote {
-            quote_id,
-            shipment_id: SHIPMENT_ID,
-            expected_delivery,
-            grace_period,
-            payout_amount,
-            premium_amount,
-            buyer,
-            expires_at,
+            terms: QuoteTerms {
+                quote_id,
+                shipment_id: SHIPMENT_ID,
+                expected_delivery,
+                grace_period,
+                payout_amount,
+                premium_amount,
+                buyer,
+                expires_at,
+            },
         }
         .data(),
         accounts::GetQuote {
@@ -1266,14 +1268,16 @@ fn get_quote_requires_the_underwriter() {
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
         &instruction::GetQuote {
-            quote_id: 1,
-            shipment_id: SHIPMENT_ID,
-            expected_delivery: expected,
-            grace_period: GRACE,
-            payout_amount: 10_000 * UNIT,
-            premium_amount: 1_000 * UNIT,
-            buyer: Pubkey::default(),
-            expires_at: expected,
+            terms: QuoteTerms {
+                quote_id: 1,
+                shipment_id: SHIPMENT_ID,
+                expected_delivery: expected,
+                grace_period: GRACE,
+                payout_amount: 10_000 * UNIT,
+                premium_amount: 1_000 * UNIT,
+                buyer: Pubkey::default(),
+                expires_at: expected,
+            },
         }
         .data(),
         accounts::GetQuote {
