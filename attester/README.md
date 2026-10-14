@@ -58,17 +58,22 @@ different one. Any change here is a breaking change to the on-chain verify.
 
 ```bash
 bun install
-bun test          # 25 tests
+bun test          # 27 tests
 bun run typecheck
 bun run attest    # print a signed attestation for one arrival
 ```
 
-`bun run attest` takes the pool and the attester seed as hex, the shipment and
-nonce as decimals, and the attested arrival as unix seconds:
+`bun run attest` takes the pool as hex, the shipment and nonce as decimals, and the
+attested arrival as unix seconds. The signing key comes as a raw seed, or as a Solana
+keypair file — a wallet can hold the pool's `oracle_authority`, so its own key signs:
 
 ```bash
 bun run attest --pool-hex <64 hex chars> --seed-hex <64 hex chars> \
   --shipment 27 --nonce 1 --arrival 1700000000 --terminal 4201 --json
+
+# the wallet that initialised the pool as its oracle_authority
+bun run attest --pool-hex <64 hex chars> --keypair ~/.config/solana/id.json \
+  --shipment 27 --nonce 1 --arrival 1700000000 --json
 ```
 
 ## The simulated source is not a toy

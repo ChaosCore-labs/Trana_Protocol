@@ -13,6 +13,11 @@ freight_delay/client/generated/
 test-ledger
 .surfpool
 
+# The devnet demo mint's keypair. It is needed only to CREATE that mint — its mint
+# authority is the paying wallet, so losing this file does not stop you minting more
+# demo USDC. The address itself is recorded in `freight_delay/scripts/demo.ts`.
+freight_delay/.demo/
+
 .agents/
 .omo/
 .commandcode/

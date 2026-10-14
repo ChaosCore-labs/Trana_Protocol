@@ -33,6 +33,25 @@ export function privateKeyFromSeed(seed: Uint8Array): Uint8Array {
   return seed;
 }
 
+/**
+ * A Solana CLI keypair file is a JSON array of the 64 bytes `seed || publicKey`, so its
+ * first 32 are the ed25519 seed this package signs with. That is what lets a wallet —
+ * `~/.config/solana/id.json` — also be the pool's `oracle_authority`.
+ */
+export function seedFromKeypairJson(value: unknown): Uint8Array {
+  if (!Array.isArray(value)) {
+    throw new TypeError("a keypair file is a JSON array of bytes");
+  }
+  if (value.length < KEY_LEN) {
+    throw new RangeError(`expected at least ${KEY_LEN} bytes, got ${value.length}`);
+  }
+  const seed = value.slice(0, KEY_LEN);
+  if (seed.some((byte) => typeof byte !== "number" || !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+    throw new TypeError("a keypair file holds one byte per entry");
+  }
+  return Uint8Array.from(seed as number[]);
+}
+
 export function generateAttesterKeypair(): AttesterKeypair {
   const privateKey = crypto.getRandomValues(new Uint8Array(KEY_LEN));
   return { privateKey, publicKey: ed.getPublicKey(privateKey) };

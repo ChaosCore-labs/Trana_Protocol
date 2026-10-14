@@ -137,6 +137,39 @@ step. It cannot time-travel the way the local walkthrough does, so it buys a pol
 whose deadline is 30 seconds out and polls the cluster clock until it passes — the
 script retries on the public RPC's HTTP 429s.
 
+## Interacting on devnet
+
+`bun run devnet-e2e` mints a throwaway token every run, which is what makes it a
+clean-room proof — and what makes it useless for driving an instruction by hand, where
+the address must stop moving. Two commands cover that case instead:
+
+```bash
+bun run demo-mint    # create the one demo token (writes the git-ignored .demo/demo-mint.json)
+bun run pdas         # print the addresses an instruction asks for, in the order it asks
+```
+
+`DEMO_MINT` in `scripts/demo.ts` is that token: 6 decimals, and its **mint authority is
+the paying wallet**, not the mint's own keypair — so minting more demo USDC later needs
+nothing but `bun run demo-mint --top-up`. Its keypair is only needed to create the
+account, which is why losing `freight_delay/.demo/` costs nothing but the address.
+
+Explorer derives `config` and `treasury` on its own, but only once the accounts their
+seeds reference are filled in: the mint first, then the attester (seeds are in the
+[PDAs table](#pdas) below). `bun run pdas` prints the whole set rather than leaving it to
+derivation — including, on request, for some other pool: `bun run pdas <mint> [attester]`.
+
+One consequence worth knowing before choosing a mint: `initialize_pool` can succeed
+**once** per `(usdc_mint, oracle_authority)` pair, because both are the config address.
+A second call is "account already in use" by construction — the exact discipline the e2e
+relies on.
+
+One wallet can hold every signing role. Three of them are **stored at `initialize_pool`**
+and compared later, so point all three at the same key: `keeper` (later `post_root` must be
+that wallet), `underwriter` (later `get_quote` must be that wallet) and `oracle_authority`
+(the key whose ed25519 signature `settle_policy` verifies — so the attester signs with it,
+`bun run attest --keypair ~/.config/solana/id.json`). `admin`, `lp`, `insured` and `crank`
+sign per transaction and can be the same wallet as well. `bun run pdas` prints the values.
+
 ## How it works
 
 | Role | Does |

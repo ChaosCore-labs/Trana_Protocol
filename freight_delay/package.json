@@ -10,6 +10,9 @@
     "lifecycle": "bun run scripts/lifecycle.ts",
     "predevnet-e2e": "bun run codegen",
     "devnet-e2e": "bun run scripts/devnet-e2e.ts",
+    "demo-mint": "bun run scripts/create-demo-mint.ts",
+    "prepdas": "bun run codegen",
+    "pdas": "bun run scripts/pdas.ts",
     "pretypecheck": "bun run codegen",
     "typecheck": "tsc --noEmit"
   },

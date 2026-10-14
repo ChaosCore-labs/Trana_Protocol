@@ -8,6 +8,7 @@ import {
   generateAttesterKeypair,
   privateKeyFromSeed,
   publicKeyFromPrivate,
+  seedFromKeypairJson,
   signPayload,
   verifyPayload,
 } from "../src/signing.ts";
@@ -22,6 +23,23 @@ const SAMPLE: ArrivalPayload = {
 
 /** The pool an attestation is for, as the raw 32 bytes of its address. */
 const POOL = new Uint8Array(32).fill(5);
+
+describe("keypair files", () => {
+  it("takes the ed25519 seed from the first 32 bytes of a Solana keypair", () => {
+    const seed = new Uint8Array(32).fill(9);
+    const publicKey = publicKeyFromPrivate(seed);
+    const file = [...seed, ...publicKey];
+
+    assert.deepEqual(seedFromKeypairJson(file), seed);
+    assert.deepEqual(publicKeyFromPrivate(seedFromKeypairJson(file)), publicKey);
+  });
+
+  it("rejects anything that is not a 32-byte-prefixed byte array", () => {
+    assert.throws(() => seedFromKeypairJson("not a keypair"), TypeError);
+    assert.throws(() => seedFromKeypairJson([1, 2, 3]), RangeError);
+    assert.throws(() => seedFromKeypairJson([999, ...new Array(31).fill(1)]), TypeError);
+  });
+});
 
 describe("payload encoding", () => {
   it("is 64 bytes and round-trips", () => {
