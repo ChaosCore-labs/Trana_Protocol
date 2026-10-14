@@ -11,11 +11,13 @@ flowchart LR
     Admin["Admin"]
     LP["Liquidity Provider"]
     Shipper["Shipper / Exporter"]
+    Underwriter["Underwriter<br/>authors the terms"]
     Attester["Attester<br/>ed25519 keypair"]
     Crank["Crank<br/>any signer"]
 
     subgraph Program["Program-owned state"]
         Config["PoolConfig"]
+        Quote["Quote"]
         LpPos["LpPosition"]
         Policy["Policy"]
     end
@@ -33,6 +35,8 @@ flowchart LR
     LP -->|deposit_capital| LpPos
     LP -->|withdraw_capital| Config
     LP -->|withdraw_capital| LpPos
+    Underwriter -->|get_quote| Quote
+    Shipper -->|buy_policy| Quote
     Shipper -->|buy_policy| Config
     Shipper -->|buy_policy| Policy
     Attester -.->|signs attestation| Crank
@@ -51,10 +55,12 @@ flowchart LR
     Treasury -.->|redemption| LpAta
 ```
 
-Solid edges are what each instruction creates or writes. Four of the five write
+Solid edges are what each instruction creates or writes. Four of the seven write
 `PoolConfig`, which is why it is the accounting hub rather than one account among
-three. `initialize_pool` is the exception: it creates `PoolConfig` rather than
-writing an existing one, and starts the pool at zero risk.
+four. `initialize_pool` creates it rather than writing an existing one, and starts
+the pool at zero risk; `get_quote` and `post_root` never write it at all. `Quote`
+is created by `get_quote` and closed by `buy_policy`, which is why it has two
+solid edges and no state of its own beyond the terms.
 
 The attester is drawn as a dotted edge because it is **off chain**. It holds an
 ed25519 keypair and signs the pool address plus
@@ -75,6 +81,7 @@ counterparties of those four legs.
 | Account | Seeds | Owner | Signer authority |
 |---|---|---|---|
 | `PoolConfig` | `[b"config", usdc_mint, oracle_authority]` | Freight Delay program | — |
+| `Quote` | `[b"quote", config, quote_id_le]` | Freight Delay program | — |
 | treasury | `[b"treasury", config]` | SPL Token program | `PoolConfig` PDA |
 | `LpPosition` | `[b"lp_position", config, lp]` | Freight Delay program | — |
 | `Policy` | `[b"policy", config, policy_id_le]` | Freight Delay program | — |
@@ -155,14 +162,15 @@ is caller-supplied arbitrary.
 ```text
 programs/freight_delay/src/
 ├── lib.rs                           # declare_id!, #[program] mod freight_delay — forwarding only
-├── constants.rs                     # 5 seed literals + FEE_DENOMINATOR, MAX_SLA_SECONDS,
+├── constants.rs                     # 6 seed literals + FEE_DENOMINATOR, MAX_SLA_SECONDS,
 │                                    #   USDC_DECIMALS, MAX_POLICY_ID_GAP
-├── error.rs                         # FreightDelayError — 14 flat variants
-├── events.rs                        # eight events
+├── error.rs                         # FreightDelayError — 17 flat variants
+├── events.rs                        # nine events
 ├── instructions.rs                  # pub mod + pub use registry
-├── state.rs                         # PoolConfig, LpPosition, Policy, Registry
+├── state.rs                         # PoolConfig, Quote, LpPosition, Policy, Registry
 └── instructions/
     ├── initialize_pool.rs
+    ├── get_quote.rs
     ├── deposit_capital.rs
     ├── buy_policy.rs
     ├── settle_policy.rs

@@ -44,8 +44,8 @@ Everything green is reproducible with two commands:
 
 | Evidence | Command | Result |
 |---|---|---|
-| LiteSVM suite (in-process, the same `.so` the deploy ships) | `anchor build && cargo nextest run` | **38 passed**, 0 failed |
-| Devnet end-to-end: `initialize_pool` → `deposit_capital` → `buy_policy` ×2 → `settle_policy` (late + on-time) → `post_root` | `bun run devnet-e2e` | **all checks passed on devnet** |
+| LiteSVM suite (in-process, the same `.so` the deploy ships) | `anchor build && cargo nextest run` | **45 passed**, 0 failed |
+| Devnet end-to-end: `initialize_pool` → `deposit_capital` → `get_quote` + `buy_policy` ×2 → `settle_policy` (late + on-time) → `post_root` | `bun run devnet-e2e` | **all checks passed on devnet** |
 
 ![LiteSVM suite: 38 tests passed](freight_delay/assets/tests-nextest.webp)
 
@@ -66,7 +66,7 @@ it is given, apart from its decimals: the only mint property the program checks 
 
 ## Architecture
 
-One program, six instructions, four PDAs and one token account. Nothing else is
+One program, seven instructions, five PDAs and one token account. Nothing else is
 on chain: an attested arrival is a signed message, not an account.
 
 ![freight_delay architecture](freight_delay/assets/architecture.webp)
@@ -80,6 +80,7 @@ flowchart TB
         ADMIN["Admin"]:::actor
         LP["LP — liquidity provider"]:::actor
         SHIP["Shipper — the insured"]:::actor
+        UND["Underwriter — authors the terms"]:::actor
         ATT["Attester — ed25519 key, off chain"]:::actor
         CRANK["Crank — anyone"]:::actor
         KEEP["Keeper"]:::actor
@@ -88,6 +89,7 @@ flowchart TB
     subgraph program["freight_delay program"]
         IP[initialize_pool]
         DC[deposit_capital]
+        GQ[get_quote]
         BP[buy_policy]
         SP[settle_policy]
         WC[withdraw_capital]
@@ -99,16 +101,21 @@ flowchart TB
         TRE[("treasury — SPL token account<br/>treasury, config")]
         POS[("LpPosition PDA<br/>lp_position, config, lp")]
         POL[("Policy PDA<br/>policy, config, policy_id")]
+        QUO[("Quote PDA<br/>quote, config, quote_id")]
         REG[("Registry PDA<br/>registry, config, epoch")]
     end
 
     ADMIN -->|once| IP
+    UND -->|the price| GQ
     LP --> DC
     LP --> WC
     SHIP --> BP
     CRANK --> SP
     KEEP --> PR
     ATT -.->|signs the arrival| SP
+
+    GQ --> QUO
+    BP -->|reads the terms, closes it| QUO
 
     IP --> CFG
     IP --> TRE
@@ -128,9 +135,10 @@ flowchart TB
 
 | Actor | Reaches the program by | Can it be replaced? |
 |---|---|---|
-| Admin | `initialize_pool(fee_bps, keeper)` — the attester co-signs, because its key seeds the pool address | No: no setter instruction exists, by design |
+| Admin | `initialize_pool(fee_bps, keeper, underwriter)` — the attester co-signs, because its key seeds the pool address | No: no setter instruction exists, by design |
+| Underwriter | `get_quote` — the only instruction that names a price; `buy_policy` then reads every term from that account | No: fixed at initialisation, by design |
 | LP | `deposit_capital`, `withdraw_capital` | n/a — per-LP position account |
-| Shipper | `buy_policy`; receives the payout and the closed policy's rent | n/a |
+| Shipper | `buy_policy`; names no term — it can only accept what the underwriter quoted — and receives the payout and the closed policy's rent | n/a |
 | Attester | Nothing. It signs `(pool, shipment_id, actual_delivery, terminal_code, nonce)` off chain | No — see *Key rotation* below |
 | Crank | `settle_policy` — permissionless; the worst a leaked crank key does is pay someone else's fees | Anyone |
 | Keeper | `post_root` — writes history-batch roots | No, by design |
@@ -192,7 +200,7 @@ mise install                 # agave, anchor, surfpool, nextest, sccache, bun
 
 cd freight_delay
 anchor build                 # -> target/deploy/freight_delay.so
-cargo nextest run            # 38 tests: 31 LiteSVM + 7 unit
+cargo nextest run            # 45 tests: 38 LiteSVM + 7 unit
 bun run devnet-e2e           # the same lifecycle against the devnet deployment
 
 # The documentation site.
@@ -203,6 +211,10 @@ bun run dev                  # http://localhost:5173
 
 `anchor build` must run before the tests: they load `target/deploy/freight_delay.so`
 at compile time, so a stale build silently tests old code.
+
+The same applies to `client/generated/`, the Codama client the scripts import: it
+is not checked in, and an npm `pre` hook regenerates it from `target/idl` before
+any command that needs it — so `anchor build` still has to come first.
 
 ## Reading the documentation
 

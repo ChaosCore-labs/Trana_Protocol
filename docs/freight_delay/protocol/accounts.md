@@ -1,6 +1,6 @@
 # Accounts & State
 
-Four account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
+Five account types, all defined in `state.rs` with `#[derive(InitSpace)]`. Every
 one is allocated as `8 + X::INIT_SPACE`, where the leading 8 bytes are Anchor's
 discriminator.
 
@@ -25,6 +25,7 @@ cannot be created — or squatted — by anyone else.
 | `admin` | `Pubkey` | 32 | Recorded at init; **never read by any handler** |
 | `oracle_authority` | `Pubkey` | 32 | The attester's raw 32-byte ed25519 public key; the only key whose signature settles a policy |
 | `keeper` | `Pubkey` | 32 | The only key that may `post_root`; immutable after init |
+| `underwriter` | `Pubkey` | 32 | The only key that may `get_quote`, so it authors every price; immutable after init, and deliberately not the same key as `oracle_authority` |
 | `usdc_mint` | `Pubkey` | 32 | The pool's mint; also a seed component |
 | `treasury` | `Pubkey` | 32 | The program-owned token account |
 | `total_capital` | `u64` | 8 | Deposits plus net premiums minus realised payouts |
@@ -34,7 +35,7 @@ cannot be created — or squatted — by anyone else.
 | `last_policy_id` | `u64` | 8 | Highest id issued; ids strictly increase, within `MAX_POLICY_ID_GAP` of the previous one, and never repeat |
 | `fee_bps` | `u16` | 2 | Premium fee in basis points, immutable after init |
 | `bump` | `u8` | 1 | PDA bump |
-| | | **203** | `space = 8 + 203 = 211` |
+| | | **235** | `space = 8 + 235 = 243` |
 
 Two methods live on this struct:
 
@@ -61,6 +62,8 @@ if the invariant were ever violated — the guard fails closed.
 risk — `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital` —
 making full collateralisation a per-instruction re-check rather than a single
 entry gate. `initialize_pool` is the exception: it creates the pool at zero risk.
+`get_quote` is the other: it creates terms and moves nothing, so it has no check
+to make.
 
 ## `Registry` — a posted history-batch root
 
@@ -134,12 +137,39 @@ PDA is closed (CHA-18), so both are only ever read during the settling
 transaction.
 
 The effective trigger boundary is `expected_delivery + grace_period`, computed at
-settlement time rather than stored. `buy_policy` requires that sum to land inside
+settlement time rather than stored. `get_quote` requires that sum to land inside
 `(now, now + MAX_SLA_SECONDS]`: settlement recomputes it, so a pair outside the
 horizon — or one whose sum overflows `i64` — would leave the policy permanently
 unsettleable and lock its collateral for good. Neither term is validated for
-realism inside the horizon: any future quote and any non-negative `grace_period`
+realism inside the horizon: any future date and any non-negative `grace_period`
 are accepted, however unlikely the voyage is to match them.
+
+## `Quote` — one seller-authored offer
+
+Seeds `[b"quote", config, quote_id_le]`. Written only by `PoolConfig.underwriter`
+and **closed by `buy_policy`**, so one quote backs exactly one policy. Every term
+of the sale comes from here — the buyer passes no term at all, which is what stops
+a buyer naming its own price.
+
+| Field | Type | Bytes | Meaning |
+|---|---|---|---|
+| `underwriter` | `Pubkey` | 32 | Who authored the terms; kept for provenance, since the address already implies it |
+| `buyer` | `Pubkey` | 32 | `Pubkey::default()` means open to any buyer |
+| `quote_id` | `u64` | 8 | Caller-chosen, and reusable once the account is closed |
+| `shipment_id` | `u64` | 8 | Copied into the policy |
+| `expected_delivery` | `i64` | 8 | Copied into the policy |
+| `grace_period` | `i64` | 8 | Copied into the policy |
+| `payout_amount` | `u64` | 8 | Copied into the policy; the risk the pool takes on |
+| `premium_amount` | `u64` | 8 | Copied into the policy; the price the buyer pays |
+| `expires_at` | `i64` | 8 | Last moment the terms may be accepted, never later than `expected_delivery` |
+| `bump` | `u8` | 1 | PDA bump |
+| | | **113** | `space = 8 + 113 = 121` |
+
+`expires_at` is bounded above by `expected_delivery` at authoring time, so terms
+cannot be accepted once the ship is due — without that a buyer who already knew
+the vessel was late could accept them and collect. The account is closed rather
+than flagged, so an accepted quote cannot be presented twice; a quote nobody
+accepts simply stays, and there is no instruction that reclaims its rent.
 
 ## Where the USDC actually is
 

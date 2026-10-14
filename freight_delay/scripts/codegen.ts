@@ -8,7 +8,7 @@
  *   anchor build && bun run codegen
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { rootNodeFromAnchor } from "@codama/nodes-from-anchor";
@@ -16,7 +16,14 @@ import { renderVisitor } from "@codama/renderers-js";
 import { createFromRoot } from "codama";
 
 const root = join(import.meta.dirname, "..");
-const idl = JSON.parse(readFileSync(join(root, "target/idl/freight_delay.json"), "utf8"));
+const idlPath = join(root, "target/idl/freight_delay.json");
+// `client/generated` is not checked in, so this runs from an npm `pre` hook on
+// every command that needs the client. The IDL it reads is not checked in either,
+// which is why the failure below names the build rather than the path.
+if (!existsSync(idlPath)) {
+  throw new Error(`missing ${idlPath} — run \`anchor build\` first, then re-run this.`);
+}
+const idl = JSON.parse(readFileSync(idlPath, "utf8"));
 
 await createFromRoot(rootNodeFromAnchor(idl)).accept(
   renderVisitor(join(root, "client"), {
@@ -30,4 +37,4 @@ await createFromRoot(rootNodeFromAnchor(idl)).accept(
   }),
 );
 
-console.log("regenerated client/generated from target/idl/freight_delay.json");
+console.log("regenerated client/generated from target/idl/freight_delay.json (untracked output)");

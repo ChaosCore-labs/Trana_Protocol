@@ -1,7 +1,7 @@
 # Events
 
-Eight events, all defined in `events.rs`. One per state-mutating instruction,
-`initialize_pool` has its own, and `settle_policy` emits three. Each
+Nine events, all defined in `events.rs` — one per instruction, with
+`settle_policy` emitting three of them. Each
 is emitted at the **end** of its handler — after state mutation and after
 `assert_solvent()` — so an emitted event is proof that the transaction succeeded
 and its effects are durable.
@@ -18,13 +18,15 @@ pub struct PoolInitialized {
     pub treasury: Pubkey,
     pub admin: Pubkey,
     pub oracle_authority: Pubkey,
+    pub keeper: Pubkey,
+    pub underwriter: Pubkey,
     pub fee_bps: u16,
 }
 ```
 
-Emitted by `initialize_pool`. Captures the immutable configuration: neither
-`oracle_authority` nor `fee_bps` can change later, so this event is the
-authoritative record of both.
+Emitted by `initialize_pool`. Captures the immutable configuration:
+`oracle_authority`, `keeper`, `underwriter` and `fee_bps` cannot change later, so
+this event is the authoritative record of all four.
 
 ## `CapitalDeposited`
 
@@ -42,12 +44,40 @@ Emitted by `deposit_capital`. `shares_minted` is the floored result of the share
 pricing, so a client tracking LP positions can reconcile from events alone
 without calling the share formula itself. `total_capital` is read post-mutation.
 
+## `QuoteCreated`
+
+```rust
+pub struct QuoteCreated {
+    pub config: Pubkey,
+    pub quote: Pubkey,
+    pub underwriter: Pubkey,
+    pub buyer: Pubkey,
+    pub quote_id: u64,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium_amount: u64,
+    pub expires_at: i64,
+}
+```
+
+Emitted by `get_quote`, the only instruction that names a price. It is the record
+of what the seller offered and when the offer lapsed — `buyer` is
+`Pubkey::default()` for a quote open to anyone.
+
+This event carries the only copy of the terms that survives a quote nobody
+accepts: an unaccepted quote keeps its account, but an expired one is never
+acceptable again, and nothing closes it.
+
 ## `PolicyPurchased`
 
 ```rust
 pub struct PolicyPurchased {
     pub config: Pubkey,
     pub policy: Pubkey,
+    pub quote: Pubkey,
+    pub quote_id: u64,
     pub insured: Pubkey,
     pub policy_id: u64,
     pub shipment_id: u64,
@@ -62,6 +92,10 @@ Emitted by `buy_policy`. Duplicates the full policy terms, which is the point: a
 indexer can build its policy table from events without ever deserialising a
 `Policy` account. The effective deadline is `expected_delivery + grace_period`,
 and both terms are emitted so it can be computed off chain.
+
+`quote` and `quote_id` are emitted because the quote account is closed by this
+very instruction: they are what ties a sale to the offer the seller authored, and
+the offer's own terms were emitted by `QuoteCreated`.
 
 Note what is absent — the fee split. `net_premium` and `fee` are derivable from
 `premium_amount` and the pool's `fee_bps` (from `PoolInitialized`), but they are

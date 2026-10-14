@@ -16,13 +16,16 @@ import { signPayload } from "../../attester/src/signing.ts";
 import {
   fetchPolicy,
   fetchPoolConfig,
+  fetchQuote,
   findConfigPda,
   findLpPositionPda,
   findPolicyPda,
+  findQuotePda,
   findRegistryPda,
   findTreasuryPda,
   getBuyPolicyInstruction,
   getDepositCapitalInstruction,
+  getGetQuoteInstruction,
   getInitializePoolInstruction,
   getPostRootInstruction,
   getSettlePolicyInstruction,
@@ -56,6 +59,9 @@ export const lpPositionPda = (programId: Address, config: Address, lp: Address) 
 export const policyPda = (programId: Address, config: Address, policyId: bigint) =>
   findPolicyPda({ config, policyId }, { programAddress: programId }).then(([a]) => a);
 
+export const quotePda = (programId: Address, config: Address, quoteId: bigint) =>
+  findQuotePda({ config, quoteId }, { programAddress: programId }).then(([a]) => a);
+
 export const ataFor = (owner: Address, mint: Address) =>
   findAssociatedTokenPda({ owner, tokenProgram: TOKEN_PROGRAM_ADDRESS, mint }).then(([a]) => a);
 
@@ -68,6 +74,7 @@ export function initializePool(
   feeBps: number,
   oracleAuthority: TransactionSigner,
   keeper: Address,
+  underwriter: Address,
 ): Instruction {
   return getInitializePoolInstruction(
     {
@@ -78,6 +85,7 @@ export function initializePool(
       treasury: h.treasury,
       feeBps,
       keeper,
+      underwriter,
     },
     forProgram(h),
   );
@@ -102,16 +110,49 @@ export async function depositCapital(
   );
 }
 
-export async function buyPolicy(
+/**
+ * Author terms as the pool's underwriter. `buyer` of the default address is an
+ * open quote any buyer may accept; the premium is the seller's number, never the
+ * caller of `buy_policy`.
+ */
+export async function getQuote(
   h: Harness,
-  insured: KeyPairSigner,
+  underwriter: TransactionSigner,
   a: {
-    policyId: bigint;
+    quoteId: bigint;
     shipmentId: bigint;
     expectedDelivery: bigint;
     gracePeriod: bigint;
     payoutAmount: bigint;
     premiumAmount: bigint;
+    buyer: Address;
+    expiresAt: bigint;
+  },
+): Promise<Instruction> {
+  return getGetQuoteInstruction(
+    {
+      underwriter,
+      config: h.config,
+      quote: await quotePda(h.programId, h.config, a.quoteId),
+      quoteId: a.quoteId,
+      shipmentId: a.shipmentId,
+      expectedDelivery: a.expectedDelivery,
+      gracePeriod: a.gracePeriod,
+      payoutAmount: a.payoutAmount,
+      premiumAmount: a.premiumAmount,
+      buyer: a.buyer,
+      expiresAt: a.expiresAt,
+    },
+    forProgram(h),
+  );
+}
+
+export async function buyPolicy(
+  h: Harness,
+  insured: KeyPairSigner,
+  a: {
+    policyId: bigint;
+    quoteId: bigint;
   },
 ): Promise<Instruction> {
   return getBuyPolicyInstruction(
@@ -121,13 +162,10 @@ export async function buyPolicy(
       usdcMint: h.usdcMint,
       treasury: h.treasury,
       insuredUsdc: await ataFor(insured.address, h.usdcMint),
+      quote: await quotePda(h.programId, h.config, a.quoteId),
       policy: await policyPda(h.programId, h.config, a.policyId),
       policyId: a.policyId,
-      shipmentId: a.shipmentId,
-      expectedDelivery: a.expectedDelivery,
-      gracePeriod: a.gracePeriod,
-      payoutAmount: a.payoutAmount,
-      premiumAmount: a.premiumAmount,
+      quoteId: a.quoteId,
     },
     forProgram(h),
   );
@@ -279,5 +317,10 @@ export async function readPool(h: Harness) {
 
 export async function readPolicy(h: Harness, policyId: bigint) {
   const { data } = await fetchPolicy(h.client.rpc, await policyPda(h.programId, h.config, policyId));
+  return data;
+}
+
+export async function readQuote(h: Harness, quoteId: bigint) {
+  const { data } = await fetchQuote(h.client.rpc, await quotePda(h.programId, h.config, quoteId));
   return data;
 }

@@ -25,10 +25,10 @@ indexer, no API service, and no on-chain oracle integration.
 
 | Surface | Count | Detail |
 |---|---|---|
-| Instructions | 6 | `initialize_pool`, `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital`, `post_root` |
-| Account types | 4 | `PoolConfig`, `LpPosition`, `Policy`, `Registry` |
-| Error variants | 13 | One flat `FreightDelayError` enum |
-| Events | 8 | One per instruction, plus `DeliveryAttested` and `PolicyClosed` |
+| Instructions | 7 | `initialize_pool`, `get_quote`, `deposit_capital`, `buy_policy`, `settle_policy`, `withdraw_capital`, `post_root` |
+| Account types | 5 | `PoolConfig`, `Quote`, `LpPosition`, `Policy`, `Registry` |
+| Error variants | 17 | One flat `FreightDelayError` enum |
+| Events | 9 | One per instruction, plus `DeliveryAttested` and `PolicyClosed` |
 | Outbound CPIs | 1 | `transfer_from_treasury`, SPL Token `transfer_checked` |
 
 ## Where the arrival data comes from
@@ -56,19 +56,24 @@ protocol, and none of them exists in `src/`:
   the string `unbonding` appears nowhere in the program.
 - **A `TreasuryVault` account struct.** The treasury is an SPL `TokenAccount`
   owned by the token program with the `PoolConfig` PDA as authority.
-- **Any governance or admin setter, including key rotation.** `fee_bps` and
-  `oracle_authority` are fixed at initialisation and cannot be changed, and no
-  instruction replaces the attester or the keeper. `PoolConfig.admin` is never
-  read. The cost is accepted and has been raised by review: a compromised
-  attester key can forge arrivals for the pool's lifetime, and a compromised
-  keeper key can post false history roots, with no on-chain recovery beyond
-  redeploying the program and migrating the capital.
+- **Any governance or admin setter, including key rotation.** `fee_bps`,
+  `oracle_authority`, `keeper` and `underwriter` are fixed at initialisation and
+  cannot be changed, and no instruction replaces the attester or the keeper.
+  `PoolConfig.admin` is never read. The cost is accepted and has been raised by
+  review: a compromised attester key can forge arrivals for the pool's lifetime,
+  and a compromised keeper key can post false history roots, with no on-chain
+  recovery beyond redeploying the program and migrating the capital. The
+  `underwriter` key authors every quote, so a pool's terms are only as honest as
+  that key.
 - **A Project44 / Spire AIS / Switchboard-TEE oracle integration.** No oracle
   program, no TEE, no HTTP. The program verifies an ed25519 signature from the
   key configured at init (`oracle_authority`), but how that attester obtains the
   arrival is entirely off chain and out of protocol scope — see
   [Where the arrival data comes from](#where-the-arrival-data-comes-from).
 - **A fee withdrawal path.** `total_fees` accrues and can never be paid out.
+- **A close path for a quote nobody accepts.** `buy_policy` closes the quote it
+  accepts; a quote that expires unaccepted keeps its account and rent on chain
+  forever, and the underwriter authors the next quote under a new `quote_id`.
 - **A refund or timeout for unsettleable policies.** If a shipment is never
   attested, the locked risk is permanent.
 - **A crank incentive.** Settlement is permissionless and unpaid.
@@ -89,12 +94,16 @@ reuses the checked-in program keypair, localnet and devnet derive identical
 addresses; `Anchor.toml` defaults to `localnet`, so a devnet deploy passes
 `--provider.cluster devnet` explicitly.
 
+The build that added `get_quote` grew `PoolConfig` by one key (`underwriter`), so
+a pool created by an earlier build has the wrong account size and must be
+re-initialised rather than reused.
+
 The devnet walkthrough (`freight_delay/scripts/devnet-e2e.ts`) is the only code here
 that spends anything, and it spends nothing of value: it creates its own 6-decimal SPL
 token, mints it to itself, and drives the pool with it. That token is not USDC and holds
 no value; the program's only requirement on a mint is `decimals == 6`.
 
-Test coverage is 38 tests: 31 LiteSVM integration tests and 7 unit tests of the
+Test coverage is 45 tests: 38 LiteSVM integration tests and 7 unit tests of the
 ed25519 precompile parsing. The integration suite covers the happy path of every
 instruction, the rejection cases, and one regression per finding from the
 pre-freeze adversarial audit and the later scan; `bun run devnet-e2e` drives the

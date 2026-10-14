@@ -40,6 +40,7 @@ impl<'info> InitializePool<'info> {
         &mut self,
         fee_bps: u16,
         keeper: Pubkey,
+        underwriter: Pubkey,
         bumps: InitializePoolBumps,
     ) -> Result<()> {
         // A 100% fee floors `net_premium` to zero, and a pool that reaches zero
@@ -53,6 +54,7 @@ impl<'info> InitializePool<'info> {
             admin: self.admin.key(),
             oracle_authority: self.oracle_authority.key(),
             keeper,
+            underwriter,
             usdc_mint: self.usdc_mint.key(),
             treasury: self.treasury.key(),
             total_capital: 0,
@@ -71,6 +73,7 @@ impl<'info> InitializePool<'info> {
             admin: self.admin.key(),
             oracle_authority: self.oracle_authority.key(),
             keeper,
+            underwriter,
             fee_bps,
         });
 

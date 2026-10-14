@@ -18,6 +18,9 @@ pub const LP_POSITION_SEED: &[u8] = b"lp_position";
 pub const POLICY_SEED: &[u8] = b"policy";
 
 #[constant]
+pub const QUOTE_SEED: &[u8] = b"quote";
+
+#[constant]
 pub const REGISTRY_SEED: &[u8] = b"registry";
 
 /// Basis-point denominator for `PoolConfig::fee_bps` (1 bp = 1/100 of 1%).
@@ -51,6 +54,7 @@ emitted into the IDL and visible to clients.
 | treasury | `[b"treasury", config]` | SPL `TokenAccount`, authority = `PoolConfig` PDA |
 | `LpPosition` | `[b"lp_position", config, lp]` | Bound to the LP's key |
 | `Policy` | `[b"policy", config, policy_id_le]` | `policy_id` little-endian |
+| `Quote` | `[b"quote", config, quote_id_le]` | One seller-authored set of terms; closed when accepted |
 | `Registry` | `[b"registry", config, epoch_le]` | `epoch` little-endian; one root per epoch |
 
 The program id is `4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs`.
@@ -102,15 +106,20 @@ const [policy] = await getProgramDerivedAddress({
   seeds: ['policy', encoder.encode(config), bytes(policyId)],
 })
 
+const [quote] = await getProgramDerivedAddress({
+  programAddress: PROGRAM_ID,
+  seeds: ['quote', encoder.encode(config), bytes(quoteId)],
+})
+
 const [registry] = await getProgramDerivedAddress({
   programAddress: PROGRAM_ID,
   seeds: ['registry', encoder.encode(config), bytes(epoch)],
 })
 ```
 
-Note that `treasury`, `lp_position`, and `policy` all take the **config** PDA as
-a seed, not the mint. Deriving them from the mint directly produces the wrong
-address.
+Note that `treasury`, `lp_position`, `policy` and `quote` all take the **config**
+PDA as a seed, not the mint. Deriving them from the mint directly produces the
+wrong address.
 
 ## Consequences of the shapes
 
@@ -126,7 +135,7 @@ authority is the `PoolConfig` PDA, the program moves funds only by reproducing
 `[b"config", usdc_mint, oracle_authority, bump]` during a CPI.
 
 **There is no delivery seed.** An attested arrival is not a PDA — it is a signed
-message verified during settlement, so it has no address and no owner. The five
+message verified during settlement, so it has no address and no owner. The six
 literals above are therefore the entire seed surface, and `DELIVERY_SEED` was
 removed along with the delivery account.
 

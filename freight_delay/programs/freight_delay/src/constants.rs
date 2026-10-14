@@ -13,14 +13,17 @@ pub const LP_POSITION_SEED: &[u8] = b"lp_position";
 pub const POLICY_SEED: &[u8] = b"policy";
 
 #[constant]
+pub const QUOTE_SEED: &[u8] = b"quote";
+
+#[constant]
 pub const REGISTRY_SEED: &[u8] = b"registry";
 
 #[constant]
 pub const FEE_DENOMINATOR: u64 = 10_000;
 
 /// Bound on where a policy's deadline (`expected_delivery + grace_period`) may
-/// land, measured from purchase. An unreachable deadline makes the payout
-/// unreleasable, and there is no timeout.
+/// land, measured from authoring time (`get_quote`). An unreachable deadline
+/// makes the payout unreleasable, and there is no timeout.
 #[constant]
 pub const MAX_SLA_SECONDS: i64 = 365 * 24 * 60 * 60;
 

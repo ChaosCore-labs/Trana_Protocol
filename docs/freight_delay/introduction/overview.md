@@ -6,7 +6,7 @@ quoted delivery time; liquidity providers underwrite that risk for premium yield
 an off-chain attester signs deliveries, and that signature is verified on chain;
 and settlement is permissionless.
 
-The mechanism is deliberately small: **six instructions, four account types, and
+The mechanism is deliberately small: **seven instructions, five account types, and
 one invariant.**
 
 ## The problem it targets
@@ -47,7 +47,8 @@ about how they are enforced rather than merely intended:
 
 **Premiums are paid up front and in full.** `buy_policy` transfers the premium
 before any state is written, so an underfunded buyer cannot end up holding a
-live policy.
+live policy. The premium itself is the underwriter's number, not the buyer's:
+`get_quote` authors the terms and `buy_policy` reads them from that account.
 
 **The payout is collateralised before the policy exists.** `buy_policy` refuses
 to lock a payout larger than the pool's unencumbered capital, so the pool cannot

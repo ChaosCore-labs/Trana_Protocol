@@ -61,16 +61,16 @@ freight_delay/
 ├── programs/freight_delay/
 │   ├── Cargo.toml            # anchor-lang + anchor-spl 1.2.1, LiteSVM dev-deps
 │   ├── src/
-│   │   ├── lib.rs            # #[program] — six instructions, forwarding ctx.bumps
+│   │   ├── lib.rs            # #[program] — seven instructions, forwarding ctx.bumps
 │   │   ├── instructions.rs   # flat `pub mod` + `pub use` list
 │   │   ├── instructions/     # one file per instruction: Accounts struct + handler
 │   │   ├── state.rs          # PoolConfig, LpPosition, Policy
 │   │   ├── constants.rs      # PDA seeds, FEE_DENOMINATOR, the SLA horizon, the id window
-│   │   ├── error.rs          # Freight DelayError — 14 flat variants
-│   │   └── events.rs         # eight events (settle_policy emits three)
-│   └── tests/test_freight_delay.rs  # 31 integration tests (7 more unit tests in shared.rs)
+│   │   ├── error.rs          # Freight DelayError — 17 flat variants
+│   │   └── events.rs         # nine events (settle_policy emits three)
+│   └── tests/test_freight_delay.rs  # 38 integration tests (7 more unit tests in shared.rs)
 ├── client/program.ts         # lifecycle harness over the generated client
-├── client/generated/         # Codama client generated from target/idl — do not hand-edit
+├── client/generated/         # Codama client from target/idl — not checked in, do not hand-edit
 ├── scripts/lifecycle.ts      # local MVP walkthrough — TS + surfpool
 ├── scripts/codegen.ts        # regenerates client/generated from the IDL
 └── runbooks/                 # Surfpool deployment scaffolding (has its own README)
@@ -106,7 +106,7 @@ release profile turns on `overflow-checks` with `lto = "fat"` and
 ```bash
 cd freight_delay
 anchor build                  # -> target/deploy/freight_delay.so
-cargo nextest run             # 38 tests, color when stdout is a terminal
+cargo nextest run             # 45 tests, color when stdout is a terminal
 anchor test                   # runs Anchor.toml [scripts].test: nextest with --color always
 cargo check --all-targets     # fast type-check loop
 bun run devnet-e2e            # the lifecycle against the deployed devnet program
@@ -204,7 +204,7 @@ fund its own payout. And every state-mutating handler ends with
 ## Test harness
 
 - **LiteSVM**, not `anchor-client` and not a validator: `litesvm` +
-  `litesvm-token`, with `solana-awesome` re-exports. 31 of the 38 tests live in
+  `litesvm-token`, with `solana-awesome` re-exports. 38 of the 45 tests live in
   `programs/freight_delay/tests/test_freight_delay.rs`; the other 7 are unit tests
   of the ed25519 precompile parsing in `src/instructions/shared.rs`.
 - Each test builds a fresh `LiteSVM` through `setup()`, airdrops four keypairs and

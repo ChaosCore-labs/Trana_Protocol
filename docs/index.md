@@ -18,7 +18,7 @@ features:
   - title: Permissionless settlement
     details: settle_policy is callable by any signer once a policy matures. The crank has no discretion — it only supplies compute.
   - title: Small, auditable surface
-    details: Five instructions, three account types, and one PDA-signed CPI, built on a vault-and-shares skeleton.
+    details: Seven instructions, five account types, and one PDA-signed CPI, built on a vault-and-shares skeleton.
 ---
 
 ## One protocol, one skeleton

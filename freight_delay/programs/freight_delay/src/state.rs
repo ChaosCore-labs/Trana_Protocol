@@ -9,6 +9,10 @@ pub struct PoolConfig {
     /// Raw 32-byte ed25519 key, not a wallet address.
     pub oracle_authority: Pubkey,
     pub keeper: Pubkey,
+    /// Authors quotes: the only key that can name a price. Deliberately distinct
+    /// from `oracle_authority`, because one key that both writes the terms and
+    /// signs the arrivals can mint a policy and settle it.
+    pub underwriter: Pubkey,
     pub usdc_mint: Pubkey,
     pub treasury: Pubkey,
     /// Deposits plus net premiums, minus realised payouts.
@@ -63,6 +67,28 @@ pub struct Policy {
     pub premium_amount: u64,
     pub is_settled: bool,
     pub is_paid: bool,
+    pub bump: u8,
+}
+
+/// One seller-authored set of policy terms. `buy_policy` reads every term from
+/// here, so the buyer never names a price. Created by the pool's `underwriter`
+/// and closed at purchase, so one quote backs exactly one policy.
+#[account]
+#[derive(InitSpace)]
+pub struct Quote {
+    /// The key that authored these terms, kept for provenance.
+    pub underwriter: Pubkey,
+    /// `Pubkey::default()` means open: any buyer may accept these terms.
+    pub buyer: Pubkey,
+    pub quote_id: u64,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium_amount: u64,
+    /// Last moment the terms may be accepted. Held to `expected_delivery` at
+    /// authoring time, so a quote can never be bought after the ship is due.
+    pub expires_at: i64,
     pub bump: u8,
 }
 

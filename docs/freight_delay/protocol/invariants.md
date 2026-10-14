@@ -16,8 +16,8 @@ invariant holds, the pool can honour every live policy simultaneously — a
 correlated corridor blockage is a loss event, not a solvency event.
 
 It is enforced by `PoolConfig::assert_solvent()`, called at the end of all four
-state-mutating handlers. Because a failing `require!` reverts the whole
-transaction, the check is atomic with the mutation.
+capital-moving handlers (`get_quote` moves none). Because a failing `require!`
+reverts the whole transaction, the check is atomic with the mutation.
 
 ## Why it holds, handler by handler
 
@@ -29,7 +29,8 @@ doing the work:
 |---|---|---|---|
 | `initialize_pool` | `0` | `0` | Trivially holds: `0 <= 0` |
 | `deposit_capital` | `+= amount` | unchanged | Capital only grows |
-| `buy_policy` | `+= net_premium` | `+= payout` | Entry gate: `free_capital >= payout`, i.e. `capital - locked >= payout`, so `locked + payout <= capital`. The premium added afterwards only widens the margin |
+| `get_quote` | `0` | `0` | Creates terms and moves nothing, so it has no `assert_solvent()` |
+| `buy_policy` | `+= net_premium` | `+= quote.payout_amount` | Entry gate: `free_capital >= quote.payout_amount`, i.e. `capital - locked >= payout`, so `locked + payout <= capital`. The premium added afterwards only widens the margin |
 | `settle_policy` (triggered) | `-= payout` | `-= payout` | Equal subtraction from both sides preserves the ordering |
 | `settle_policy` (not triggered) | unchanged | `-= payout` | Risk falls, capital holds |
 | `withdraw_capital` | `-= amount` | unchanged | Guard: `amount <= free_capital`, i.e. `amount <= capital - locked`, so `capital - amount >= locked`. The redemption must also leave `free_capital > 0` while `total_shares > 0`, which is the liveness guard below |
@@ -111,7 +112,8 @@ The invariant is inductive over the four handlers that can move it:
 | Handler | Effect on `free_capital` | Preservation |
 |---|---|---|
 | `deposit_capital` | `+= amount` | Capital only grows |
-| `buy_policy` | `+= net_premium - payout` | The entry gate is `payout <= free_capital`, so the sum can never dip below `net_premium >= 1` |
+| `get_quote` | unchanged | Moves no capital |
+| `buy_policy` | `+= net_premium - quote.payout_amount` | The entry gate is `quote.payout_amount <= free_capital`, so the sum can never dip below `net_premium >= 1` |
 | `settle_policy` | unchanged | Equal subtraction from both sides |
 | `withdraw_capital` | `-= amount` | Guard: `total_shares == 0 || free_capital > 0` after the burn |
 
@@ -155,7 +157,7 @@ policy's deadline is always reachable and that comparison never blocks a matured
 policy. But
 `settle_policy` also always verifies a signed arrival — early or late — and the
 attester reports an absent arrival as `null` rather than inventing a timestamp.
-Nothing else in the program can release the payout: its six instructions contain
+Nothing else in the program can release the payout: its seven instructions contain
 no timeout, expiry or refund, so `total_locked_risk` only ever falls through a
 settlement.
 

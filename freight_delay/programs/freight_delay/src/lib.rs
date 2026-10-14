@@ -17,8 +17,14 @@ declare_id!("4BtUosFfNUySEGAGspfjvStCzLzqSRdfoc4Z3Z1uqGJs");
 pub mod freight_delay {
     use super::*;
 
-    pub fn initialize_pool(ctx: Context<InitializePool>, fee_bps: u16, keeper: Pubkey) -> Result<()> {
-        ctx.accounts.initialize_pool(fee_bps, keeper, ctx.bumps)
+    pub fn initialize_pool(
+        ctx: Context<InitializePool>,
+        fee_bps: u16,
+        keeper: Pubkey,
+        underwriter: Pubkey,
+    ) -> Result<()> {
+        ctx.accounts
+            .initialize_pool(fee_bps, keeper, underwriter, ctx.bumps)
     }
 
     pub fn deposit_capital(ctx: Context<DepositCapital>, amount: u64) -> Result<()> {
@@ -26,24 +32,32 @@ pub mod freight_delay {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn buy_policy(
-        ctx: Context<BuyPolicy>,
-        policy_id: u64,
+    pub fn get_quote(
+        ctx: Context<GetQuote>,
+        quote_id: u64,
         shipment_id: u64,
         expected_delivery: i64,
         grace_period: i64,
         payout_amount: u64,
         premium_amount: u64,
+        buyer: Pubkey,
+        expires_at: i64,
     ) -> Result<()> {
-        ctx.accounts.buy_policy(
-            policy_id,
+        ctx.accounts.get_quote(
+            quote_id,
             shipment_id,
             expected_delivery,
             grace_period,
             payout_amount,
             premium_amount,
+            buyer,
+            expires_at,
             ctx.bumps,
         )
+    }
+
+    pub fn buy_policy(ctx: Context<BuyPolicy>, policy_id: u64, quote_id: u64) -> Result<()> {
+        ctx.accounts.buy_policy(policy_id, quote_id, ctx.bumps)
     }
 
     pub fn settle_policy(

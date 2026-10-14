@@ -4,7 +4,7 @@ Every account each instruction requires, with the constraints that bind it.
 `mut` marks accounts the handler writes; everything else is read-only for that
 instruction.
 
-## `initialize_pool(fee_bps: u16, keeper: Pubkey)`
+## `initialize_pool(fee_bps: u16, keeper: Pubkey, underwriter: Pubkey)`
 
 | Account | Flags | Constraints |
 |---|---|---|
@@ -32,7 +32,24 @@ instruction.
 `init_if_needed` is the only use of that constraint in the program, which is why
 the `anchor-lang` `init-if-needed` feature is enabled.
 
-## `buy_policy(policy_id, shipment_id, expected_delivery, grace_period, payout_amount, premium_amount)`
+## `get_quote(quote_id: u64, shipment_id: u64, expected_delivery: i64, grace_period: i64, payout_amount: u64, premium_amount: u64, buyer: Pubkey, expires_at: i64)`
+
+| Account | Flags | Constraints |
+|---|---|---|
+| `underwriter` | `mut`, signer | Pays for the quote account; `constraint = underwriter.key() == config.underwriter` |
+| `config` | read | `seeds = [config, config.usdc_mint, config.oracle_authority]`, `bump = config.bump` |
+| `quote` | `mut`, **init** | `seeds = [quote, config, quote_id]`, `payer = underwriter`, `space = 8 + Quote::INIT_SPACE` |
+| `system_program` | read | — |
+
+`quote_id` appears in the seeds, so `#[instruction(quote_id: u64)]` is required on
+the struct. No token account and no mint: authoring terms moves no capital.
+
+A quote is the only place a price enters the program, which is why the
+`underwriter` constraint carries `FreightDelayError::Unauthorized` while the other
+signer checks in this page are advisory. `buyer` of `Pubkey::default()` marks the
+quote open to any buyer.
+
+## `buy_policy(policy_id: u64, quote_id: u64)`
 
 | Account | Flags | Constraints |
 |---|---|---|
@@ -41,12 +58,14 @@ the `anchor-lang` `init-if-needed` feature is enabled.
 | `usdc_mint` | read | — |
 | `treasury` | `mut` | `seeds = [treasury, config]`, `token::mint`, `token::authority = config` |
 | `insured_usdc` | `mut` | `associated_token::mint = usdc_mint`, `associated_token::authority = insured` |
+| `quote` | `mut`, **close** | `seeds = [quote, config, quote_id]`, `bump = quote.bump`, `close = insured` — the terms, and the only source of them; closed at purchase so it cannot back a second policy |
 | `policy` | **init** | `seeds = [policy, config, policy_id]`, `payer = insured`, `space = 8 + Policy::INIT_SPACE` |
 | `token_program` | read | — |
 | `system_program` | read | — |
 
-`policy_id` appears in the seeds, so `#[instruction(policy_id: u64)]` is required
-on the struct — Anchor cannot derive the address otherwise.
+Both `policy_id` and `quote_id` appear in seeds, so
+`#[instruction(policy_id: u64, quote_id: u64)]` is required on the struct — Anchor
+cannot derive either address otherwise.
 
 
 

@@ -5,11 +5,11 @@ use crate::{
     constants::*,
     error::FreightDelayError,
     events::PolicyPurchased,
-    state::{Policy, PoolConfig},
+    state::{Policy, PoolConfig, Quote},
 };
 
 #[derive(Accounts)]
-#[instruction(policy_id: u64)]
+#[instruction(policy_id: u64, quote_id: u64)]
 pub struct BuyPolicy<'info> {
     #[account(mut)]
     pub insured: Signer<'info>,
@@ -34,6 +34,15 @@ pub struct BuyPolicy<'info> {
         associated_token::authority = insured,
     )]
     pub insured_usdc: Account<'info, TokenAccount>,
+    /// The seller's terms and the only source of them. Closed on acceptance, so
+    /// one quote backs exactly one policy.
+    #[account(
+        mut,
+        seeds = [QUOTE_SEED, config.key().as_ref(), quote_id.to_le_bytes().as_ref()],
+        bump = quote.bump,
+        close = insured,
+    )]
+    pub quote: Account<'info, Quote>,
     #[account(
         init,
         payer = insured,
@@ -47,40 +56,27 @@ pub struct BuyPolicy<'info> {
 }
 
 impl<'info> BuyPolicy<'info> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn buy_policy(
-        &mut self,
-        policy_id: u64,
-        shipment_id: u64,
-        expected_delivery: i64,
-        grace_period: i64,
-        payout_amount: u64,
-        premium_amount: u64,
-        bumps: BuyPolicyBumps,
-    ) -> Result<()> {
-        require_neq!(payout_amount, 0, FreightDelayError::InvalidAmount);
-        require_neq!(premium_amount, 0, FreightDelayError::InvalidAmount);
-        let now = Clock::get()?.unix_timestamp;
-        require!(expected_delivery > now, FreightDelayError::InvalidDeadline);
-        require!(grace_period >= 0, FreightDelayError::InvalidDeadline);
-        // The deadline, not only the quote, has to land inside the horizon: no
-        // timeout path exists, so an unreachable one locks the payout for good.
-        let horizon = now
-            .checked_add(MAX_SLA_SECONDS)
-            .ok_or(FreightDelayError::InvalidDeadline)?;
-        let deadline = expected_delivery
-            .checked_add(grace_period)
-            .ok_or(FreightDelayError::InvalidDeadline)?;
-        require!(deadline <= horizon, FreightDelayError::InvalidDeadline);
-        // `nonce` is the policy id, so a reused id would let an attestation signed
-        // for a closed policy settle a new one, and a runaway id would spend the
-        // remaining id space out from under every later policy.
+    /// Acceptance gate. The terms were validated when the underwriter authored
+    /// them; what is checked here is that this buyer may accept them, that the
+    /// offer still stands, and that the pool can carry the risk.
+    pub fn buy_policy(&mut self, policy_id: u64, quote_id: u64, bumps: BuyPolicyBumps) -> Result<()> {
+        require!(
+            Clock::get()?.unix_timestamp <= self.quote.expires_at,
+            FreightDelayError::QuoteExpired
+        );
+        require!(
+            self.quote.buyer == Pubkey::default() || self.quote.buyer == self.insured.key(),
+            FreightDelayError::QuoteNotForBuyer
+        );
         require!(
             policy_id > self.config.last_policy_id
                 && policy_id - self.config.last_policy_id <= MAX_POLICY_ID_GAP,
             FreightDelayError::InvalidPolicyId
         );
         self.config.last_policy_id = policy_id;
+
+        let payout_amount = self.quote.payout_amount;
+        let premium_amount = self.quote.premium_amount;
         require!(
             self.config.free_capital() >= payout_amount,
             FreightDelayError::Insolvent
@@ -128,9 +124,9 @@ impl<'info> BuyPolicy<'info> {
         self.policy.set_inner(Policy {
             insured: self.insured.key(),
             policy_id,
-            shipment_id,
-            expected_delivery,
-            grace_period,
+            shipment_id: self.quote.shipment_id,
+            expected_delivery: self.quote.expected_delivery,
+            grace_period: self.quote.grace_period,
             payout_amount,
             premium_amount,
             is_settled: false,
@@ -143,11 +139,13 @@ impl<'info> BuyPolicy<'info> {
         emit!(PolicyPurchased {
             config: self.config.key(),
             policy: self.policy.key(),
+            quote: self.quote.key(),
+            quote_id,
             insured: self.insured.key(),
             policy_id,
-            shipment_id,
-            expected_delivery,
-            grace_period,
+            shipment_id: self.quote.shipment_id,
+            expected_delivery: self.quote.expected_delivery,
+            grace_period: self.quote.grace_period,
             payout_amount,
             premium_amount,
         });

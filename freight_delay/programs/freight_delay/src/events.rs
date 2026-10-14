@@ -8,6 +8,7 @@ pub struct PoolInitialized {
     pub admin: Pubkey,
     pub oracle_authority: Pubkey,
     pub keeper: Pubkey,
+    pub underwriter: Pubkey,
     pub fee_bps: u16,
 }
 
@@ -20,10 +21,32 @@ pub struct CapitalDeposited {
     pub total_capital: u64,
 }
 
+/// Emitted when the seller authors terms. The quote account is closed at
+/// purchase, so this event and `PolicyPurchased` are the durable record of what
+/// was quoted.
+#[event]
+pub struct QuoteCreated {
+    pub config: Pubkey,
+    pub quote: Pubkey,
+    pub underwriter: Pubkey,
+    /// `Pubkey::default()` when the quote is open to any buyer.
+    pub buyer: Pubkey,
+    pub quote_id: u64,
+    pub shipment_id: u64,
+    pub expected_delivery: i64,
+    pub grace_period: i64,
+    pub payout_amount: u64,
+    pub premium_amount: u64,
+    pub expires_at: i64,
+}
+
 #[event]
 pub struct PolicyPurchased {
     pub config: Pubkey,
     pub policy: Pubkey,
+    /// The quote the terms came from, before it is closed.
+    pub quote: Pubkey,
+    pub quote_id: u64,
     pub insured: Pubkey,
     pub policy_id: u64,
     pub shipment_id: u64,

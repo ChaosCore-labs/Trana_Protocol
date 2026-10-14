@@ -45,6 +45,7 @@ import {
   configPda,
   deliveryInstructions,
   depositCapital,
+  getQuote,
   initializePool,
   policyPda,
   postRoot,
@@ -58,6 +59,8 @@ import { FREIGHT_DELAY_PROGRAM_ADDRESS } from "../client/generated/index.ts";
 const DECIMALS = 6;
 const FEE_BPS = 200;
 const USDC = 1_000_000n;
+/** `Pubkey::default()`: an open quote, acceptable by any buyer. */
+const OPEN_BUYER = address("11111111111111111111111111111111");
 const DEPOSIT = 500_000n * USDC;
 const LATE_PAYOUT = 100_000n * USDC;
 const LATE_PREMIUM = 10_000n * USDC;
@@ -208,7 +211,7 @@ check("test USDC minted to LP and shipper (demo money, holds no value)", true);
 // -------------------------------------------------------------------- stage 1
 
 console.log(cyan("\nstage 1 — initialize_pool"));
-await send([initializePool(h, FEE_BPS, attester, admin.address)]);
+await send([initializePool(h, FEE_BPS, attester, admin.address, admin.address)]);
 let pool = await readPool(h);
 report("after initialize_pool", pool);
 check(`fee_bps = ${pool.feeBps}`, pool.feeBps === FEE_BPS);
@@ -236,15 +239,18 @@ for (const [id, payout, premium] of [
   [2n, ONTIME_PAYOUT, ONTIME_PREMIUM],
 ] as const) {
   await send([
-    await buyPolicy(h, shipper, {
-      policyId: id,
+    await getQuote(h, admin, {
+      quoteId: id,
       shipmentId: 27n,
       expectedDelivery,
       gracePeriod: 0n,
       payoutAmount: payout,
       premiumAmount: premium,
+      buyer: OPEN_BUYER,
+      expiresAt: expectedDelivery,
     }),
   ]);
+  await send([await buyPolicy(h, shipper, { policyId: id, quoteId: id })]);
 }
 pool = await readPool(h);
 report("after buy_policy ×2", pool);

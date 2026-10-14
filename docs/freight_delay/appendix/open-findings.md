@@ -1,96 +1,45 @@
 # Open Findings
 
-Holes in the shipped program, and the options considered for closing them. This
-page is a record, not a roadmap: **nothing below is implemented**, and `src/` is
-still the specification. It exists so the next reader does not have to re-derive
-the same analysis.
+What the program does not protect against, and what has been done about it. This
+page is a record, not a roadmap: a closed finding states the fix that landed, an
+open one states the options still on the table. `src/` remains the specification.
 
-Each finding states what the code does today, what follows from it, and what the
-candidate fixes are — including the ones rejected or deferred.
+## Finding 1 — `buy_policy` accepted unauthenticated terms (closed)
 
-## Finding 1 — `buy_policy` accepts unauthenticated terms
+### What was wrong
 
-### What the code does
-
-`buy_policy` is permissionless, and every term is an instruction argument:
+`buy_policy` was permissionless, and every term was an instruction argument:
 `expected_delivery`, `grace_period`, `payout_amount`, `premium_amount`. Nothing
-links the premium to the payout, and nothing authenticates that anyone other than
-the caller chose the terms.
+linked the premium to the payout, and nothing authenticated that anyone other than
+the caller had chosen them.
 
-| Guard (`instructions/buy_policy.rs`) | Condition |
-|---|---|
-| `payout_amount != 0` | passes for any non-zero payout |
-| `premium_amount != 0` | passes for **one base unit** |
-| `expected_delivery > now` | caller sets it one hour out |
-| `grace_period >= 0` | caller sets 0 or 1 day |
-| `expected_delivery + grace_period <= now + MAX_SLA_SECONDS` | 365 days |
-| `policy_id` in `(last_policy_id, last_policy_id + MAX_POLICY_ID_GAP]` | read the config, take the next id |
-| `free_capital() >= payout_amount` | **the only real gate** |
+Calling it directly with a 100,000 USDC payout, a 1 base-unit premium, a one-day
+grace and an `expected_delivery` one hour out passed every guard: the fee floors
+to zero, and the only real gate was `free_capital() >= payout_amount`. The pool
+then carried a 100,000 USDC liability that cost one millionth of a USDC.
 
-The fee is `premium_amount * fee_bps / 10_000`, so a one-base-unit premium floors
-to **zero** fee. Entry costs the attacker one base unit (0.000001 USDC) plus the
-policy account's rent-exempt minimum (roughly 0.002 SOL).
+Two outcomes followed, and the cheaper one needed no key at all:
 
-### Worked example
-
-```text
-policy_id        = last_policy_id + 1
-shipment_id      = 0
-expected_delivery= now + 1 hour
-grace_period     = 1 day
-payout_amount    = 100,000 USDC
-premium_amount   = 1 base unit        (0.000001 USDC)
-```
-
-Every guard passes. The pool now carries a 100,000 USDC liability that cost one
-millionth of a USDC, and it holds that liability against whatever `free_capital`
-the pool happened to have.
-
-### What follows
-
-| Attack | Needs a key? | Result |
+| Attack | Needed a key? | Result |
 |---|---|---|
-| Take the payout | **yes** — one ed25519 signature from `oracle_authority` | 100,000 USDC leaves the treasury for 0.000001 USDC |
-| Freeze the capital | **no** | the payout is locked in `total_locked_risk`, outside `free_capital`, permanently |
+| Take the payout | yes — one ed25519 signature from `oracle_authority` | 100,000 USDC left the treasury for 0.000001 USDC |
+| Freeze the capital | **no** | the payout sat in `total_locked_risk`, outside `free_capital`, permanently |
 
-The second row is the serious one, because it needs no key at all.
+The second was the serious one. There is no timeout (CHA-15), no cancel and no
+admin path, so a policy that can never settle keeps its payout out of reach of
+`withdraw_capital` forever. And because the capital gate passed at *equality*, one
+call left the pool with about one base unit of free capital: no further policy
+could be written, and LPs could withdraw essentially nothing. For one base unit
+and the price of rent, an attacker could permanently freeze the whole pool.
 
-`settle_policy` verifies an ed25519 signature against `PoolConfig.oracle_authority`
-and nothing else, and the attester in `attester/` signs whatever payload it is
-handed — the caller supplies the seed and every field, and nothing checks that the
-`nonce` corresponds to a policy anyone quoted. So a loose signing process, or one
-colluding insider, converts the first row into outright theft.
+It was never an insolvency bug. The invariant held throughout, which is exactly
+why the suite could not see it — the failure mode was frozen funds, not a broken
+guarantee.
 
-Without a signature, the policy can never settle. There is no timeout (CHA-15),
-no cancel, and no admin path, so the payout stays in `total_locked_risk` forever —
-outside `free_capital`, and therefore beyond the reach of `withdraw_capital`. And
-because the capital gate passes at *equality*, a single call leaves the pool with
-about 1 base unit of free capital: no further policy can be written, and LPs can
-withdraw essentially nothing.
+### The fix: `get_quote` and a `Quote` PDA
 
-For one base unit and the price of rent, an attacker permanently freezes the
-whole pool.
-
-### What cannot happen
-
-Be precise about the bound:
-
-- **No insolvency.** `total_locked_risk <= total_capital` still holds, so the pool
-  never owes more than it holds.
-- **No theft beyond `free_capital`.** The entry gate caps the payout at the pool's
-  unencumbered capital.
-- **No zero-capital brick.** The gate is checked before the net premium is
-  credited, so `free_capital > 0` survives while shares remain.
-
-That is also why the existing suite cannot see it: the invariant holds under this
-attack. The failure mode is frozen funds, not a broken invariant.
-
-### Options
-
-#### Option A — seller-authored terms: a `get_quote` instruction and a `Quote` PDA
-
-The real fix. The seller's key authors the terms and writes them on chain; the
-buyer can only accept them.
+Terms are now authored by the seller and stored on chain; `buy_policy` reads them
+from that account and takes no term as an argument.
 
 ```mermaid
 flowchart LR
@@ -101,69 +50,57 @@ flowchart LR
     X["Direct buy_policy with no quote<br/>has no account to reference"] --> R["rejected"]
 ```
 
-A `Quote` PDA would carry `shipment_id`, `expected_delivery`, `grace_period`,
-`payout_amount`, `premium_amount`, `expires_at` and a `buyer` (or `OPEN` for a
-published quote any buyer can accept). Four rules make it work:
+Four rules make it hold, and each maps to one line of the program:
 
-1. **Terms come from the account, not the arguments.** `buy_policy` reads the
-   quote's fields and ignores — or asserts equality with — the instruction args.
-   Otherwise the attacker passes a real quote id alongside fake numbers.
-2. **One quote, one policy.** Close the `Quote` PDA on purchase, returning rent.
-   Otherwise one cheap quote is reusable.
-3. **An expiry.** `expires_at` stops a stale quote being bought after the
-   corridor's risk has changed — a strike, a known weather event.
-4. **Bind the buyer, or leave it `OPEN`.** A named buyer reserves the trade; an
-   open quote is what lets the seller's terms be accepted without the seller being
-   online.
+1. **The terms come from the account, not the arguments.** `buy_policy(policy_id,
+   quote_id)` has no term to accept, so there is nothing left to underprice.
+   Worse for an attacker, the `Quote` address itself proves provenance: it derives
+   from `config.underwriter`, so only that key could have created it.
+2. **One quote, one policy.** `buy_policy` closes the `Quote` PDA at acceptance, so
+   a spent quote cannot be presented twice.
+3. **An expiry.** `get_quote` requires `now < expires_at <= expected_delivery`, so
+   terms cannot be accepted once the ship is due.
+4. **A buyer binding, or none.** `buyer == Pubkey::default()` leaves the quote open
+   to anyone; any other value reserves it.
 
-| Property | Without a quote | With a quote |
-|---|---|---|
-| Who sets the price | the buyer | the seller |
-| Seller online at purchase | yes | no |
-| Stale pricing after a strike | possible | bounded by `expires_at` |
-| A published quote can be shopped | no | yes, if `OPEN` |
+The authoring/acceptance split is the substance of the fix. `get_quote` validates
+the schedule (`expected_delivery` in the future, `grace_period >= 0`, the deadline
+inside `MAX_SLA_SECONDS`), and `buy_policy` validates only whether the offer still
+stands, whether this buyer may accept it, and whether the pool can carry the risk.
 
-**Cost.** This adds a signing key, which the program currently avoids everywhere
-(see the "no governance setters" divergence in [LOI vs Code](./loi-divergences)).
-Two things to get right:
+### What the fix does not cover
 
-- **Keep the quote key separate from the attester key.** One key that both writes
-  the terms and signs the arrivals can mint a fraudulent policy and settle it — a
-  full drain of the treasury.
-- **Prefer a new immutable `underwriter` over reusing `PoolConfig.admin`.** `admin`
-  is written at initialisation and never read; giving it this power would silently
-  activate a field nothing else depends on.
+**The `underwriter` key is a new trust root.** It is a second signing key where the
+program previously had one, and it must stay distinct from `oracle_authority`: a
+single key that could both author the terms and sign the arrivals could mint a
+fraudulent policy and settle it, draining the treasury. `initialize_pool` fixes
+both keys, and neither can be rotated.
 
-The name is provisional: `get_quote` reads like a query, but the instruction
-*writes* — a quote is an account, not a return value. A pure read could not be
-trusted by `buy_policy` at all.
+**An unaccepted quote has no close path.** An expired quote is never acceptable
+again, and nothing reclaims its account or rent; the underwriter simply authors the
+next quote under a different `quote_id`. Quote ids are caller-chosen and may be
+reused once an account is closed, so the closed PDA — not the id — is what stops
+one offer backing two policies.
 
-#### Option B — minimum rate floor and payout cap
+**Expiry is the only lever against a better-informed buyer.** The program cannot
+see where a vessel is, so it cannot tell a buyer who is quoting early from one who
+already knows the ship is drifting. Bounding how long an offer stands is the whole
+defence.
 
-A stopgap that needs no new account, no new key and no new instruction:
+**The minimum-rate floor was considered and not built.** Charging
+`premium_amount * 10_000 >= payout_amount * MIN_RATE_BPS` would have made griefing
+expensive without stopping theft. With terms authored by the seller it has no job
+left to do: the floor is now whatever the underwriter prices.
 
-```text
-premium_amount * 10_000 >= payout_amount * MIN_RATE_BPS
-payout_amount  <= total_capital * MAX_POLICY_BPS / 10_000
-```
+**There is still no timeout path (CHA-15).** A shipment that is never attested
+leaves its payout locked indefinitely, and a quote change does not touch that.
 
-The floor makes griefing expensive — a 100,000 USDC payout would carry a real
-premium, so freezing the pool stops being free. It does **not** stop theft: an
-attacker who holds or can obtain a signature still profits, just at a stated rate.
+## Finding 2 — nothing anchors the payout to the cargo (open)
 
-#### Option C — a timeout or expiry path (CHA-15)
-
-Already recorded as missing. On its own it does not close this hole, but it is
-what makes the freeze temporary instead of permanent: a policy that cannot be
-settled would release its locked risk after a bound, returning the capital to
-`free_capital`. See [Invariants](../protocol/invariants) for why a timeout was
-deliberately left out and what it costs.
-
-## Finding 2 — nothing anchors the payout to the cargo
-
-The buyer chooses `payout_amount`, so the pool's exposure is buyer-chosen too. The
-program never sees the goods, and it cannot: no field, no account, no oracle
-carries cargo data.
+The underwriter chooses `payout_amount`, so the pool's exposure is a seller
+decision — an improvement over a buyer's, but still unanchored. The program never
+sees the goods, and it cannot: no field, no account and no oracle carries cargo
+data.
 
 A shipment id does not close the gap. A bill of lading carries the corridor, the
 carrier, container count, weight and HS code — but **not the value**, and
@@ -191,28 +128,29 @@ control, or be absolute.
 | Shipment id / corridor | buyer |
 | Declared cargo value | buyer, with documents (if option 3 is used) |
 | Grace period | buyer |
-| **Premium** | **nobody — it is computed** |
+| **Premium** | **nobody — `get_quote` computes it** |
 | Payout | derived as a capped share of the declared or derived loss |
 
-The seller's key, not the buyer and not the frontend, must enforce at least:
+The underwriter's key, not the buyer and not the frontend, must enforce at least:
 the premium is derived and never accepted; `payout <= 20% of cargo value`;
 `payout <= 5% of pool capital` plus a per-corridor cap; and rows whose `P(late)`
 exceeds roughly 15% are refused.
 
 **The limit to state plainly.** Nothing on chain can verify a declared cargo
 value. That is underwriting, and it stays an off-chain diligence process — the same
-as any insurer asking for an invoice. What a `Quote` PDA buys is that the seller
-*asserted* those terms with its own key, so the assertion is accountable. A quote
-pipeline that mechanically republishes buyer input changes nothing and rebuilds the
-original hole with an extra account.
+as any insurer asking for an invoice. What the `Quote` PDA buys is that the seller
+*asserted* those terms with its own key, so the assertion is accountable. An
+authoring pipeline that mechanically republishes buyer input changes nothing, and
+would rebuild the original hole with an extra account.
 
 ## Related
 
+- [Instructions](../protocol/instructions) — the guards `get_quote` and
+  `buy_policy` apply today
+- [Accounts & State](../protocol/accounts) — the `Quote` layout and `PoolConfig`
+- [Invariants](../protocol/invariants) — why the solvency invariant held even under
+  Finding 1, and what it does not cover
 - [LOI vs Code](./loi-divergences) — the other deliberate absences, including the
   missing timeout and the refusal to add governance setters
 - [Scope & Status](../introduction/scope) — what the repository contains, and what
   is explicitly not implemented
-- [Invariants](../protocol/invariants) — why the solvency invariant holds even
-  under the attack above, and what it does not cover
-- [Instructions](../protocol/instructions) — the guards `buy_policy` actually
-  applies today

@@ -73,6 +73,14 @@ fn policy_pda(config: &Pubkey, policy_id: u64) -> Pubkey {
     .0
 }
 
+fn quote_pda(config: &Pubkey, quote_id: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"quote", config.as_ref(), &quote_id.to_le_bytes()],
+        &freight_delay::id(),
+    )
+    .0
+}
+
 fn registry_pda(config: &Pubkey, epoch: u64) -> Pubkey {
     Pubkey::find_program_address(
         &[b"registry", config.as_ref(), &epoch.to_le_bytes()],
@@ -202,6 +210,7 @@ fn initialize_pool(env: &mut Env, fee_bps: u16) -> TransactionResult {
         &instruction::InitializePool {
             fee_bps,
             keeper: env.admin.pubkey(),
+            underwriter: env.admin.pubkey(),
         }
         .data(),
         accounts::InitializePool {
@@ -263,23 +272,46 @@ fn buy_policy(
     buy_policy_with_grace(env, policy_id, payout_amount, premium_amount, expected_delivery, GRACE)
 }
 
-fn buy_policy_with_grace(
+fn author_quote(
     env: &mut Env,
-    policy_id: u64,
+    quote_id: u64,
     payout_amount: u64,
     premium_amount: u64,
     expected_delivery: i64,
     grace_period: i64,
+    buyer: Pubkey,
+    expires_at: i64,
 ) -> TransactionResult {
     let ix = Instruction::new_with_bytes(
         freight_delay::id(),
-        &instruction::BuyPolicy {
-            policy_id,
+        &instruction::GetQuote {
+            quote_id,
             shipment_id: SHIPMENT_ID,
             expected_delivery,
             grace_period,
             payout_amount,
             premium_amount,
+            buyer,
+            expires_at,
+        }
+        .data(),
+        accounts::GetQuote {
+            underwriter: env.admin.pubkey(),
+            config: env.config,
+            quote: quote_pda(&env.config, quote_id),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &env.admin, &[ix])
+}
+
+fn buy_against_quote(env: &mut Env, policy_id: u64, quote_id: u64) -> TransactionResult {
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::BuyPolicy {
+            policy_id,
+            quote_id,
         }
         .data(),
         accounts::BuyPolicy {
@@ -288,6 +320,7 @@ fn buy_policy_with_grace(
             usdc_mint: env.usdc_mint,
             treasury: env.treasury,
             insured_usdc: env.shipper_usdc,
+            quote: quote_pda(&env.config, quote_id),
             policy: policy_pda(&env.config, policy_id),
             token_program: TOKEN_ID,
             system_program: system_program::ID,
@@ -295,6 +328,28 @@ fn buy_policy_with_grace(
         .to_account_metas(None),
     );
     send(&mut env.svm, &env.shipper, &[ix])
+}
+
+fn buy_policy_with_grace(
+    env: &mut Env,
+    policy_id: u64,
+    payout_amount: u64,
+    premium_amount: u64,
+    expected_delivery: i64,
+    grace_period: i64,
+) -> TransactionResult {
+    let quote = author_quote(
+        env,
+        policy_id,
+        payout_amount,
+        premium_amount,
+        expected_delivery,
+        grace_period,
+        Pubkey::default(),
+        expected_delivery,
+    );
+    assert!(quote.is_ok(), "the underwriter must be able to author these terms");
+    buy_against_quote(env, policy_id, policy_id)
 }
 
 /// Sign an arrival with `signer` and build the instruction pair to settle with:
@@ -392,6 +447,7 @@ fn initialize_pool_sets_state() {
     assert_eq!(config.admin, env.admin.pubkey());
     assert_eq!(config.oracle_authority, env.oracle.pubkey());
     assert_eq!(config.keeper, env.admin.pubkey());
+    assert_eq!(config.underwriter, env.admin.pubkey());
     assert_eq!(config.usdc_mint, env.usdc_mint);
     assert_eq!(config.treasury, env.treasury);
     assert_eq!(config.fee_bps, FEE_BPS);
@@ -408,6 +464,7 @@ fn initialize_pool_sets_state() {
     assert_eq!(event.config, env.config);
     assert_eq!(event.oracle_authority, env.oracle.pubkey());
     assert_eq!(event.keeper, env.admin.pubkey());
+    assert_eq!(event.underwriter, env.admin.pubkey());
     assert_eq!(event.fee_bps, FEE_BPS);
 }
 
@@ -455,6 +512,7 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
         &instruction::InitializePool {
             fee_bps: FEE_BPS,
             keeper: env.admin.pubkey(),
+            underwriter: env.admin.pubkey(),
         }
         .data(),
         metas,
@@ -465,22 +523,44 @@ fn initialize_pool_rejects_an_attester_that_does_not_sign() {
 }
 
 #[test]
-fn buy_policy_rejects_a_deadline_beyond_the_sla_horizon() {
+fn get_quote_rejects_a_deadline_beyond_the_sla_horizon() {
     // No timeout exists, so a deadline the clock cannot reach is unsettleable for good.
     let mut env = funded_pool(1_000_000 * UNIT);
     let horizon = BASE_TS + freight_delay::MAX_SLA_SECONDS;
 
     // The horizon bounds the deadline, quote plus grace, not the quote alone.
     let last_ok = horizon - GRACE;
-    assert!(buy_policy(&mut env, 1, 100_000 * UNIT, 1_000 * UNIT, last_ok).is_ok());
-    assert!(buy_policy(&mut env, 2, 100_000 * UNIT, 1_000 * UNIT, last_ok + 1).is_err());
-    assert!(buy_policy(&mut env, 3, 100_000 * UNIT, 1_000 * UNIT, horizon).is_err());
-    assert!(buy_policy(&mut env, 4, 100_000 * UNIT, 1_000 * UNIT, i64::MAX).is_err());
-    // A grace period that on its own reaches past the horizon is refused too.
+    let open = Pubkey::default();
     assert!(
-        buy_policy_with_grace(&mut env, 5, 100_000 * UNIT, 1_000 * UNIT, BASE_TS + SLA_DELTA, i64::MAX)
+        author_quote(&mut env, 1, 100_000 * UNIT, 1_000 * UNIT, last_ok, GRACE, open, last_ok).is_ok()
+    );
+    assert!(
+        author_quote(&mut env, 2, 100_000 * UNIT, 1_000 * UNIT, last_ok + 1, GRACE, open, last_ok + 1)
             .is_err()
     );
+    assert!(
+        author_quote(&mut env, 3, 100_000 * UNIT, 1_000 * UNIT, horizon, GRACE, open, horizon).is_err()
+    );
+    assert!(
+        author_quote(&mut env, 4, 100_000 * UNIT, 1_000 * UNIT, i64::MAX, GRACE, open, i64::MAX).is_err()
+    );
+    // A grace period that on its own reaches past the horizon is refused too.
+    assert!(
+        author_quote(
+            &mut env,
+            5,
+            100_000 * UNIT,
+            1_000 * UNIT,
+            BASE_TS + SLA_DELTA,
+            i64::MAX,
+            open,
+            BASE_TS + SLA_DELTA,
+        )
+        .is_err()
+    );
+
+    // The accepted boundary case is buyable, and the rejected ones were never authored.
+    assert!(buy_against_quote(&mut env, 1, 1).is_ok());
     assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 1);
 }
 
@@ -512,6 +592,7 @@ fn initialize_pool_rejects_a_mint_that_is_not_six_decimals() {
         &instruction::InitializePool {
             fee_bps: FEE_BPS,
             keeper: env.admin.pubkey(),
+            underwriter: env.admin.pubkey(),
         }
         .data(),
         accounts::InitializePool {
@@ -756,13 +837,22 @@ fn buy_policy_rejects_payout_above_free_capital() {
 }
 
 #[test]
-fn buy_policy_rejects_an_unrepresentable_deadline() {
+fn get_quote_rejects_an_unrepresentable_deadline() {
     // The deadline is recomputed at settlement, so a sum that overflows would
     // make the policy unsettleable and lock its collateral for good.
     let mut env = funded_pool(100_000 * UNIT);
-    let res = buy_policy(&mut env, 1, UNIT, UNIT, i64::MAX);
+    let res = author_quote(
+        &mut env,
+        1,
+        UNIT,
+        UNIT,
+        i64::MAX,
+        GRACE,
+        Pubkey::default(),
+        BASE_TS + 1,
+    );
     assert!(res.is_err());
-    assert!(env.svm.get_account(&policy_pda(&env.config, 1)).is_none());
+    assert!(env.svm.get_account(&quote_pda(&env.config, 1)).is_none());
 }
 
 #[test]
@@ -1165,4 +1255,154 @@ fn settle_releases_locked_risk_without_any_timeout_path() {
         after.total_capital,
         "nothing is left locked once settled"
     );
+}
+
+#[test]
+fn get_quote_requires_the_underwriter() {
+    // A quote is the only place a price enters the protocol, so minting one must
+    // be the underwriter's alone.
+    let mut env = funded_pool(100_000 * UNIT);
+    let expected = BASE_TS + SLA_DELTA;
+    let ix = Instruction::new_with_bytes(
+        freight_delay::id(),
+        &instruction::GetQuote {
+            quote_id: 1,
+            shipment_id: SHIPMENT_ID,
+            expected_delivery: expected,
+            grace_period: GRACE,
+            payout_amount: 10_000 * UNIT,
+            premium_amount: 1_000 * UNIT,
+            buyer: Pubkey::default(),
+            expires_at: expected,
+        }
+        .data(),
+        accounts::GetQuote {
+            underwriter: env.lp.pubkey(),
+            config: env.config,
+            quote: quote_pda(&env.config, 1),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    assert!(send(&mut env.svm, &env.lp, &[ix]).is_err());
+    assert!(env.svm.get_account(&quote_pda(&env.config, 1)).is_none());
+}
+
+#[test]
+fn get_quote_rejects_an_expiry_that_outlives_the_expected_arrival() {
+    // Terms that could still be accepted after the ship was due invite the buyer
+    // who already knows it is late.
+    let mut env = funded_pool(100_000 * UNIT);
+    let expected = BASE_TS + SLA_DELTA;
+    let open = Pubkey::default();
+
+    assert!(
+        author_quote(&mut env, 1, 10_000 * UNIT, 1_000 * UNIT, expected, GRACE, open, expected + 1)
+            .is_err()
+    );
+    assert!(
+        author_quote(&mut env, 2, 10_000 * UNIT, 1_000 * UNIT, expected, GRACE, open, BASE_TS)
+            .is_err(),
+        "an expiry at the current second is not in the future"
+    );
+    assert!(
+        author_quote(&mut env, 3, 10_000 * UNIT, 1_000 * UNIT, expected, GRACE, open, expected)
+            .is_ok()
+    );
+}
+
+#[test]
+fn get_quote_rejects_zero_amounts() {
+    let mut env = funded_pool(100_000 * UNIT);
+    let expected = BASE_TS + SLA_DELTA;
+    let open = Pubkey::default();
+    assert!(author_quote(&mut env, 1, 0, 1_000 * UNIT, expected, GRACE, open, expected).is_err());
+    assert!(author_quote(&mut env, 2, 10_000 * UNIT, 0, expected, GRACE, open, expected).is_err());
+}
+
+#[test]
+fn buy_policy_takes_every_term_from_the_quote() {
+    // The regression: the buyer names no terms at all, so it cannot name a token
+    // premium for a large payout. What the underwriter authored is what is sold.
+    let mut env = funded_pool(1_000_000 * UNIT);
+    let payout = 900_000 * UNIT;
+    let premium = 1 * UNIT;
+    let expected = BASE_TS + SLA_DELTA;
+    assert!(
+        author_quote(&mut env, 7, payout, premium, expected, GRACE, Pubkey::default(), expected)
+            .is_ok()
+    );
+
+    let shipper_before = balance(&env.svm, &env.shipper_usdc);
+    let res = buy_against_quote(&mut env, 1, 7);
+    assert!(res.is_ok());
+
+    let policy = read_policy(&env.svm, &policy_pda(&env.config, 1));
+    assert_eq!(policy.payout_amount, payout);
+    assert_eq!(policy.premium_amount, premium);
+    assert_eq!(policy.expected_delivery, expected);
+    assert_eq!(policy.grace_period, GRACE);
+    assert_eq!(policy.shipment_id, SHIPMENT_ID);
+
+    let config = read_config(&env.svm, &env.config);
+    assert_eq!(config.total_locked_risk, payout);
+    assert_eq!(balance(&env.svm, &env.shipper_usdc), shipper_before - premium);
+
+    let event: events::PolicyPurchased = parse_event(&res);
+    assert_eq!(event.quote, quote_pda(&env.config, 7));
+    assert_eq!(event.quote_id, 7);
+    assert_eq!(event.payout_amount, payout);
+    assert_eq!(event.premium_amount, premium);
+}
+
+#[test]
+fn buy_policy_closes_the_quote_so_it_backs_one_policy() {
+    let mut env = funded_pool(1_000_000 * UNIT);
+    let expected = BASE_TS + SLA_DELTA;
+    assert!(
+        author_quote(&mut env, 3, 100_000 * UNIT, 10_000 * UNIT, expected, GRACE, Pubkey::default(), expected)
+            .is_ok()
+    );
+    assert!(buy_against_quote(&mut env, 1, 3).is_ok());
+
+    assert!(
+        env.svm.get_account(&quote_pda(&env.config, 3)).is_none(),
+        "the accepted quote is closed"
+    );
+    assert!(
+        buy_against_quote(&mut env, 2, 3).is_err(),
+        "a spent quote cannot back a second policy"
+    );
+    assert!(env.svm.get_account(&policy_pda(&env.config, 2)).is_none());
+}
+
+#[test]
+fn buy_policy_refuses_a_quote_reserved_for_another_buyer() {
+    let mut env = funded_pool(1_000_000 * UNIT);
+    let expected = BASE_TS + SLA_DELTA;
+    let reserved_for = env.lp.pubkey();
+    assert!(
+        author_quote(&mut env, 1, 100_000 * UNIT, 10_000 * UNIT, expected, GRACE, reserved_for, expected)
+            .is_ok()
+    );
+
+    assert!(buy_against_quote(&mut env, 1, 1).is_err());
+    assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 0);
+    assert!(env.svm.get_account(&quote_pda(&env.config, 1)).is_some());
+}
+
+#[test]
+fn buy_policy_refuses_an_expired_quote() {
+    let mut env = funded_pool(1_000_000 * UNIT);
+    let expected = BASE_TS + SLA_DELTA;
+    let expires = BASE_TS + 100;
+    assert!(
+        author_quote(&mut env, 1, 100_000 * UNIT, 10_000 * UNIT, expected, GRACE, Pubkey::default(), expires)
+            .is_ok()
+    );
+
+    set_ts(&mut env.svm, expires + 1);
+    assert!(buy_against_quote(&mut env, 1, 1).is_err());
+    assert!(env.svm.get_account(&policy_pda(&env.config, 1)).is_none());
+    assert_eq!(read_config(&env.svm, &env.config).last_policy_id, 0);
 }

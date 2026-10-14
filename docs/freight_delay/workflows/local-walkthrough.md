@@ -25,9 +25,9 @@ in-process, deploys the program, and then:
 | Stage | Instruction | Asserts |
 |---|---|---|
 | 0 | — | a test USDC mint exists and the LP and shipper hold balances |
-| 1 | `initialize_pool` | `fee_bps` recorded, `oracle_authority` is the attester, capital starts at zero |
+| 1 | `initialize_pool` | `fee_bps` recorded, `oracle_authority` is the attester, `underwriter` is the quoting key, capital starts at zero |
 | 2 | `deposit_capital` | capital equals the deposit, shares mint 1:1 |
-| 3 | `buy_policy` | payout locked, premium credited net of fee |
+| 3 | `get_quote` + `buy_policy` | the underwriter authors the terms, then the buyer accepts them: payout locked, premium credited net of fee |
 | 4a | `settle_policy` | a **late** arrival pays, capital debited by the payout |
 | 4b | `settle_policy` | an **on-time** arrival pays nothing but releases the lock |
 | 5 | crank | the crank scans for the last open policy, settles it on time, and frees the capital |
@@ -73,7 +73,7 @@ time.
 | `scripts/lifecycle.ts` | the walkthrough |
 | `client/crank.ts` | the settlement crank: scan, attest, settle (CHA-19) |
 | `client/program.ts` | harness over the generated client (builders, PDAs, account codecs) |
-| `client/generated/` | Codama client generated from `target/idl/freight_delay.json` |
+| `client/generated/` | Codama client generated from `target/idl/freight_delay.json` — not checked in; an npm `pre` hook regenerates it |
 | `scripts/codegen.ts` | regenerates `client/generated` |
 
 `client/program.ts` builds its instructions with the clients Codama generates

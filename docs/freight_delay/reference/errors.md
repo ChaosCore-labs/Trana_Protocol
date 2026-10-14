@@ -1,6 +1,6 @@
 # Error Codes
 
-One flat enum, fourteen variants, every one carrying a `#[msg]`. There are no
+One flat enum, seventeen variants, every one carrying a `#[msg]`. There are no
 nested error types and no `anyhow` anywhere in the program.
 
 ```rust
@@ -20,6 +20,9 @@ pub enum FreightDelayError {
     AttestationRejected,
     InvalidPolicyId,
     InvalidMint,
+    QuoteExpired,
+    QuoteNotForBuyer,
+    InvalidExpiry,
 }
 ```
 
@@ -31,8 +34,8 @@ Anchor numbers custom errors from 6000, in declaration order.
 |---|---|---|---|
 | 6000 | `Unauthorized` | Only the configured authority may perform this action. | `withdraw_capital` `lp_position` constraint |
 | 6001 | `InvalidFee` | Fee must be below 10,000 basis points. | `initialize_pool` |
-| 6002 | `InvalidAmount` | Amount must be greater than zero. | `deposit_capital` (twice), `buy_policy` (twice), `withdraw_capital` (twice) |
-| 6003 | `InvalidDeadline` | Expected delivery plus grace period must lie in the future and within the maximum SLA horizon. | `buy_policy` |
+| 6002 | `InvalidAmount` | Amount must be greater than zero. | `deposit_capital` (twice), `get_quote` (twice), `withdraw_capital` (twice) |
+| 6003 | `InvalidDeadline` | Expected delivery plus grace period must lie in the future and within the maximum SLA horizon. | `get_quote` |
 | 6004 | `Insolvent` | Pool is insolvent: locked risk would exceed total capital. | `buy_policy` free-capital gate; `assert_solvent()` |
 | 6005 | `InsufficientFreeCapital` | Pool does not have enough unencumbered capital for this withdrawal, or the withdrawal would leave none while shares remain. | `settle_policy` (triggered), `withdraw_capital` |
 | 6006 | `PolicyNotMature` | Policy has not reached its delivery deadline plus grace period. | `settle_policy` |
@@ -43,12 +46,17 @@ Anchor numbers custom errors from 6000, in declaration order.
 | 6011 | `AttestationRejected` | Delivery attestation signature is missing or invalid. | `settle_policy` — signature check and nonce check |
 | 6012 | `InvalidPolicyId` | Policy id must be greater than the last one issued for this pool, and within the id window. | `buy_policy` |
 | 6013 | `InvalidMint` | Mint must use 6 decimals. | `initialize_pool` `usdc_mint` constraint |
+| 6014 | `QuoteExpired` | Quote has expired. | `buy_policy` |
+| 6015 | `QuoteNotForBuyer` | Quote is reserved for a different buyer. | `buy_policy` |
+| 6016 | `InvalidExpiry` | Quote expiry must be in the future and no later than the expected delivery. | `get_quote` |
 
 ## Notes per variant
 
-**`Unauthorized` now has one source.** It is raised only by `withdraw_capital`,
-from an account constraint
-(`constraint = lp_position.lp == lp.key() @ FreightDelayError::Unauthorized`).
+**`Unauthorized` has two sources.** It is raised by `withdraw_capital`, from an
+account constraint
+(`constraint = lp_position.lp == lp.key() @ FreightDelayError::Unauthorized`),
+and by `get_quote`, from
+`constraint = underwriter.key() == config.underwriter @ FreightDelayError::Unauthorized`.
 It previously also guarded `report_delivery_milestone`'s signer; that instruction
 was removed with the pull-model change. Note that `settle_policy` does **not** use
 this code — an unauthorised settlement fails the signature check and surfaces as
@@ -57,20 +65,21 @@ this code — an unauthorised settlement fails the signature check and surfaces 
 **`InvalidAmount` is heavily overloaded.** It covers zero on the way in
 (`amount != 0`, `shares != 0`, `payout != 0`, `premium != 0`) and also the case
 where a valid input floors to nothing (`shares != 0` after share pricing,
-`amount != 0` after redemption pricing). A client seeing 6002 cannot tell which
-without inspecting its own arguments.
+`amount != 0` after redemption pricing). The `payout` and `premium` pair is raised
+by `get_quote`, which is where those numbers enter the program. A client seeing
+6002 cannot tell which without inspecting its own arguments.
 
-**`InvalidDeadline` guards the schedule, not the shipment.** It is raised when
-`expected_delivery` is not strictly in the future, when `grace_period` is
-negative, or when the two do not add up to a deadline inside `MAX_SLA_SECONDS`
-(one year) — which also covers a sum that overflows `i64`. The horizon is what
-keeps every deadline reachable: without it a buyer could quote `i64::MAX`, or
-pair a one-day quote with a grace period of centuries, and the maturity gate
-would then be unreachable for the life of the pool, stranding that payout
-permanently (pre-freeze audit: unreachable deadline, unbounded grace). Inside the
-horizon it says nothing about whether the quoted date is realistic — any future
-timestamp and any non-negative slack are accepted as long as the deadline lands
-inside it.
+**`InvalidDeadline` guards the schedule, not the shipment.** It is raised by
+`get_quote` when `expected_delivery` is not strictly in the future, when
+`grace_period` is negative, or when the two do not add up to a deadline inside
+`MAX_SLA_SECONDS` (one year) — which also covers a sum that overflows `i64`. The
+horizon is what keeps every deadline reachable: without it a quote could name
+`i64::MAX`, or pair a one-day date with a grace period of centuries, and the
+maturity gate would then be unreachable for the life of the pool, stranding that
+payout permanently (pre-freeze audit: unreachable deadline, unbounded grace).
+Inside the horizon it says nothing about whether the quoted date is realistic —
+any future timestamp and any non-negative slack are accepted as long as the
+deadline lands inside it.
 
 **`InvalidPolicyId` keeps the id spendable exactly once.** `buy_policy` requires
 `policy_id > PoolConfig.last_policy_id` and no more than `MAX_POLICY_ID_GAP` ahead
@@ -80,6 +89,19 @@ would let an attestation signed for the old policy settle the new one on the sam
 shipment. The window is what stops the counter being spent in one call: a buyer
 naming `u64::MAX` would end the id space for every later policy and close the pool
 to new business for good.
+
+**`InvalidExpiry` bounds how long the offer stands.** `get_quote` requires
+`now < expires_at <= expected_delivery`. The lower bound refuses terms that are
+already dead; the upper bound is what stops a buyer accepting a quote after the
+vessel was due, which would be a trade against a fact the seller did not know.
+How much earlier a quote lapses is the underwriter's choice.
+
+**`QuoteExpired` and `QuoteNotForBuyer` are the acceptance gates.**
+`buy_policy` raises the first when the clock has passed `quote.expires_at`, and
+the second when a quote naming a specific `buyer` — anything other than
+`Pubkey::default()` — is presented by someone else. Both leave the quote account
+open, but neither can be recovered from: an expired quote is never acceptable
+again.
 
 **`InvalidMint` checks the settlement asset's scale.** `initialize_pool` accepts
 only a mint with `decimals == 6`, because every amount the program handles is a

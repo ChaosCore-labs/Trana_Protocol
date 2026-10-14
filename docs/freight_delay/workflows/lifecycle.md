@@ -9,6 +9,7 @@ sequenceDiagram
     autonumber
     actor Admin
     actor LP as Liquidity Provider
+    actor Underwriter
     actor Shipper
     participant Program as Freight Delay program
     participant Treasury as Treasury
@@ -32,10 +33,14 @@ sequenceDiagram
     end
 
     rect rgb(137, 180, 130, 0.12)
-    Note over Shipper, Treasury: Stage 3 — hedge placement
-    Shipper->>Program: buy_policy(terms)
-    Program->>Program: require free_capital >= payout
-    Program->>Program: credit net premium, lock payout risk
+    Note over Underwriter, Treasury: Stage 3 — the seller's terms, then placement
+    Underwriter->>Program: get_quote(terms, buyer, expires_at)
+    Program-->>Underwriter: QuoteCreated
+    Shipper->>Program: buy_policy(policy_id, quote_id)
+    Program->>Program: require the quote unexpired and open to this buyer
+    Program->>Program: read every term from the Quote account
+    Program->>Program: require free_capital >= quote.payout_amount
+    Program->>Program: credit net premium, lock payout risk, close the Quote PDA
     Program->>Treasury: transfer premium
     Program-->>Shipper: PolicyPurchased
     end
@@ -90,6 +95,12 @@ sequenceDiagram
 Stages 2 and 3 can interleave freely: policies can be sold the moment the pool
 holds capital, and more capital can arrive while policies are live.
 
+Stage 3 is two instructions, and the split is the point. The underwriter authors
+the terms (`get_quote`), and the buyer accepts them (`buy_policy`). The buyer
+names no term at all — not the date, the grace, the payout or the premium — so
+there is nothing left for a buyer to underprice, and the quote is closed by the
+purchase so one offer backs exactly one policy.
+
 Stage 4 is deliberately not a transaction. The attester signs the arrival and
 stops; nothing is written on chain until a crank relays that signature during
 settlement. So the signature is not a prerequisite step so much as an input to
@@ -127,7 +138,8 @@ stateDiagram-v2
 
 Every instruction that touches the pool appears here. There is no
 attestation-only instruction any more: an arrival reaches the program purely as
-instruction data to `settle_policy`.
+instruction data to `settle_policy`. `get_quote` is absent because it writes no
+pool state — it creates a `Quote` account and nothing else.
 
 There is no terminal or frozen state. The pool has no pause, no shutdown, and no
 migration path; it is a permanent state machine.

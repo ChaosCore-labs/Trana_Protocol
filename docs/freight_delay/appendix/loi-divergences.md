@@ -11,7 +11,7 @@ does not form a wrong picture of the program.
 
 | Design document (§7.3) | Reality |
 |---|---|
-| 7 instructions, including `request_withdrawal` | **5 instructions.** `request_withdrawal` does not exist |
+| 7 instructions, including `request_withdrawal` | **7 instructions.** `request_withdrawal` does not exist |
 | `request_withdrawal` starts a 7-day unbonding cooldown | No cooldown of any kind. `withdraw_capital` is immediate |
 | `withdraw_capital` redeems "matured unbonded shares" | Redeems any shares the caller holds, capped by free capital |
 | `report_delivery_milestone` writes a `DeliveryReport` | **Neither exists.** The arrival is a signed attestation verified inside `settle_policy`; nothing is written |
@@ -45,11 +45,16 @@ capabilities:
 | Claimed capability | Reality |
 |---|---|
 | `initialize_pool` | Exists, and is the only one of the two |
-| "set supported corridors and fee bps" | **No setter instruction exists.** `fee_bps` and `oracle_authority` are immutable after init |
+| "set supported corridors and fee bps" | **No setter instruction exists.** `fee_bps`, `oracle_authority`, `keeper` and `underwriter` are immutable after init |
 
 There is no instruction gated on `PoolConfig.admin` at all — the field is written
 at initialisation and never read. A pool whose oracle key is compromised cannot
 be repaired; it must be abandoned.
+
+The design document's multisig is not where quoting lives either. `get_quote` is
+gated on a separate immutable `underwriter` key chosen at initialisation, so the
+price is a seller decision on chain — but it is still one key, with no rotation
+and no recovery if it is lost.
 
 ## Oracle and data pipeline
 

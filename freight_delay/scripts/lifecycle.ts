@@ -27,6 +27,7 @@ import {
   configPda,
   deliveryInstructions,
   depositCapital,
+  getQuote,
   initializePool,
   policyPda,
   postRoot,
@@ -47,6 +48,8 @@ const GRACE = 3 * DAY;
 const DEPOSIT = 2_000_000n * USDC;
 const PAYOUT = 500_000n * USDC;
 const PREMIUM = 50_000n * USDC;
+/** `Pubkey::default()`: an open quote, acceptable by any buyer. */
+const OPEN_BUYER = address("11111111111111111111111111111111");
 
 // Fixed seed, so every run is reproducible. The pool is initialised with the
 // matching public key, so changing this changes the oracle.
@@ -153,7 +156,7 @@ check("USDC minted to LP and shipper", true);
 // -------------------------------------------------------------------- stage 1
 
 console.log("\nstage 1 — initialize_pool");
-await client.sendTransaction([initializePool(h, FEE_BPS, attester, admin.address)]);
+await client.sendTransaction([initializePool(h, FEE_BPS, attester, admin.address, admin.address)]);
 let pool = await readPool(h);
 report("after initialize_pool", pool);
 check(`fee_bps = ${pool.feeBps}`, pool.feeBps === FEE_BPS);
@@ -175,17 +178,21 @@ console.log("\nstage 3 — buy_policy");
 const expectedDelivery = (await chainNow()) + BigInt(QUOTED_TRANSIT);
 const deadline = expectedDelivery + BigInt(GRACE);
 
-const buy = (policyId: bigint) =>
-  buyPolicy(h, shipper, {
-    policyId,
+const buy = async (policyId: bigint) => [
+  await getQuote(h, admin, {
+    quoteId: policyId,
     shipmentId: 27n,
     expectedDelivery,
     gracePeriod: BigInt(GRACE),
     payoutAmount: PAYOUT,
     premiumAmount: PREMIUM,
-  });
+    buyer: OPEN_BUYER,
+    expiresAt: expectedDelivery,
+  }),
+  await buyPolicy(h, shipper, { policyId, quoteId: policyId }),
+];
 
-await client.sendTransaction([await buy(1n)]);
+await client.sendTransaction(await buy(1n));
 pool = await readPool(h);
 report("after buy_policy", pool);
 check(`payout locked ${usdc(PAYOUT)}`, pool.totalLockedRisk === PAYOUT);
@@ -206,17 +213,21 @@ for (const s of scenarios) {
   // iteration travelled the clock forward.
   const quoted = (await chainNow()) + BigInt(QUOTED_TRANSIT);
   const due = quoted + BigInt(GRACE);
-  const buyNow = (policyId: bigint) =>
-    buyPolicy(h, shipper, {
-      policyId,
+  const buyNow = async (policyId: bigint) => [
+    await getQuote(h, admin, {
+      quoteId: policyId,
       shipmentId: 27n,
       expectedDelivery: quoted,
       gracePeriod: BigInt(GRACE),
       payoutAmount: PAYOUT,
       premiumAmount: PREMIUM,
-    });
+      buyer: OPEN_BUYER,
+      expiresAt: quoted,
+    }),
+    await buyPolicy(h, shipper, { policyId, quoteId: policyId }),
+  ];
 
-  await client.sendTransaction([await buyNow(s.id)]);
+  await client.sendTransaction(await buyNow(s.id));
   const before = await readPool(h);
 
   // Move the runtime clock past the deadline. This writes the Clock sysvar, so

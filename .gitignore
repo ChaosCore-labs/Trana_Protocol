@@ -5,6 +5,10 @@ target
 node_modules
 docs/.vitepress/dist
 docs/.vitepress/cache/
+
+# Codama output from the program IDL, not a source file: regenerate with
+# `anchor build && bun run codegen` (the npm hooks do it for you).
+freight_delay/client/generated/
 *.local
 test-ledger
 .surfpool

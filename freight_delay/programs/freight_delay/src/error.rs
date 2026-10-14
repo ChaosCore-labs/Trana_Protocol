@@ -30,4 +30,10 @@ pub enum FreightDelayError {
     InvalidPolicyId,
     #[msg("Mint must use 6 decimals.")]
     InvalidMint,
+    #[msg("Quote has expired.")]
+    QuoteExpired,
+    #[msg("Quote is reserved for a different buyer.")]
+    QuoteNotForBuyer,
+    #[msg("Quote expiry must be in the future and no later than the expected delivery.")]
+    InvalidExpiry,
 }
