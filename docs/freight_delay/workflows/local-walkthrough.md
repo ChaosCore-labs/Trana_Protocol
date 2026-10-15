@@ -27,11 +27,11 @@ in-process, deploys the program, and then:
 | 0 | — | a test USDC mint exists and the LP and shipper hold balances |
 | 1 | `initialize_pool` | `fee_bps` recorded, `oracle_authority` is the attester, `underwriter` is the quoting key, capital starts at zero |
 | 2 | `deposit_capital` | capital equals the deposit, shares mint 1:1 |
-| 3 | `get_quote` + `buy_policy` | the underwriter authors the terms, then the buyer accepts them: payout locked, premium credited net of fee |
-| 4a | `settle_policy` | a **late** arrival pays, capital debited by the payout |
-| 4b | `settle_policy` | an **on-time** arrival pays nothing but releases the lock |
-| 5 | crank | the crank scans for the last open policy, settles it on time, and frees the capital |
-| 6 | `post_root` | the keeper posts a batch root; the registry account exists |
+| 3 | `get_quote` + `buy_policy` | the underwriter authors the terms — payout, premium and fee are printed — then the buyer accepts them: payout locked, premium credited net of fee |
+| 3a | `settle_policy` | **case a, the shipment is not late**: the policy bought in stage 3 arrives on time — no payout, the lock is released and the whole capital is free again |
+| 3b | `get_quote` + `buy_policy` + `settle_policy` | **case b, the shipment is late**: a second policy arrives five days past its deadline, capital debited by the payout |
+| 4 | crank | a third policy is bought and matured by time travel; the crank scans for it, asks the source for its arrival, settles it on time and frees the capital |
+| 5 | `post_root` | the keeper posts a batch root; the registry account exists |
 
 Each stage prints `total_capital`, `total_locked_risk`, `free_capital` and
 `total_fees`, so the accounting is readable without a debugger. The script exits

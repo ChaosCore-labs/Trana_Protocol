@@ -3,8 +3,9 @@
  * Local MVP walkthrough (CHA-31).
  *
  * Drives the whole protocol against an embedded Surfnet and prints the state
- * transitions. Two scenarios: a late arrival that pays, and an on-time arrival
- * that does not.
+ * transitions. `get_quote` authors the terms — payout, premium, fee — and
+ * `buy_policy` accepts them; then two cases, an on-time arrival that releases
+ * the lock and a late one that pays.
  *
  *   anchor build && bun run lifecycle
  *
@@ -46,8 +47,11 @@ const USDC = 1_000_000n;
 const QUOTED_TRANSIT = 30 * DAY;
 const GRACE = 3 * DAY;
 const DEPOSIT = 2_000_000n * USDC;
-const PAYOUT = 500_000n * USDC;
-const PREMIUM = 50_000n * USDC;
+const PREMIUM = 2_000n * USDC;
+/** Delay cover pays a high multiple of the premium: 15×. */
+const PAYOUT = 15n * PREMIUM;
+/** The pool keeps this share of every premium; the rest is credited to capital. */
+const FEE_AMOUNT = (PREMIUM * BigInt(FEE_BPS)) / 10_000n;
 /** `Pubkey::default()`: an open quote, acceptable by any buyer. */
 const OPEN_BUYER = address("11111111111111111111111111111111");
 
@@ -60,9 +64,20 @@ const ATTESTER_ADDRESS = address(getBase58Decoder().decode(ATTESTER_PUBKEY));
 // creation and no one else can create — or squat — this pool.
 const attester = await createKeyPairSignerFromPrivateKeyBytes(ATTESTER_KEY);
 
+// ANSI colour, no dependency. Off when stdout is not a terminal (or NO_COLOR is
+// set), so piped output stays plain.
+const useColor = process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
+const paint = (code: number, s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
+const dim = (s: string) => paint(2, s);
+const bold = (s: string) => paint(1, s);
+const green = (s: string) => paint(32, s);
+const red = (s: string) => paint(31, s);
+const cyan = (s: string) => paint(36, s);
+const yellow = (s: string) => paint(33, s);
+
 let failures = 0;
 const check = (label: string, ok: boolean) => {
-  console.log(`    ${ok ? "ok  " : "FAIL"}  ${label}`);
+  console.log(`    ${ok ? green("ok  ") : red("FAIL")}  ${label}`);
   if (!ok) failures++;
 };
 const usdc = (v: bigint) =>
@@ -70,12 +85,15 @@ const usdc = (v: bigint) =>
 const iso = (s: bigint | number) => new Date(Number(s) * 1000).toISOString().slice(0, 10);
 
 function report(label: string, pool: Awaited<ReturnType<typeof readPool>>) {
-  console.log(`  ${label}`);
-  console.log(`    total_capital      ${usdc(pool.totalCapital).padStart(16)}`);
-  console.log(`    total_locked_risk  ${usdc(pool.totalLockedRisk).padStart(16)}`);
-  console.log(`    free_capital       ${usdc(pool.totalCapital - pool.totalLockedRisk).padStart(16)}`);
-  console.log(`    total_fees         ${usdc(pool.totalFees).padStart(16)}`);
+  console.log(`  ${bold(cyan(label))}`);
+  const row = (name: string, value: string) => console.log(`    ${dim(name.padEnd(19))}${value.padStart(16)}`);
+  row("total_capital", usdc(pool.totalCapital));
+  row("total_locked_risk", usdc(pool.totalLockedRisk));
+  row("free_capital", usdc(pool.totalCapital - pool.totalLockedRisk));
+  row("total_fees", usdc(pool.totalFees));
 }
+
+const stage = (title: string) => console.log(`\n${bold(cyan(title))}`);
 
 // ---------------------------------------------------------------------- setup
 
@@ -109,13 +127,13 @@ const h: Harness = {
   treasury,
 };
 
-console.log(`program   ${programId}`);
-console.log(`rpc       ${client.rpcUrl}`);
-console.log(`payer     ${admin.address}`);
+console.log(`${dim("program")}   ${programId}`);
+console.log(`${dim("rpc")}       ${client.rpcUrl}`);
+console.log(`${dim("payer")}     ${admin.address}`);
 
 // -------------------------------------------------------------------- stage 0
 
-console.log("\nstage 0 — test USDC mint");
+stage("stage 0 — test USDC mint");
 await client.sendTransaction([
   getCreateAccountInstruction({
     payer: admin,
@@ -136,10 +154,11 @@ await client.sendTransaction([
 check(`mint ${usdcMint.address.slice(0, 8)}…`, true);
 
 // Fund the LP and the shipper with USDC. On chain the pool PDA owns the mint,
-// so both are minted through it.
+// so both are minted through it. The shipper pays one premium per policy it
+// buys, so it is funded for four.
 for (const [who, amount] of [
   [lp, 3_000_000n * USDC],
-  [shipper, 100_000n * USDC],
+  [shipper, 4n * PREMIUM],
 ] as const) {
   const plan = await getMintToATAInstructionPlanAsync({
     payer: admin,
@@ -155,7 +174,7 @@ check("USDC minted to LP and shipper", true);
 
 // -------------------------------------------------------------------- stage 1
 
-console.log("\nstage 1 — initialize_pool");
+stage("stage 1 — initialize_pool");
 await client.sendTransaction([initializePool(h, FEE_BPS, attester, admin.address, admin.address)]);
 let pool = await readPool(h);
 report("after initialize_pool", pool);
@@ -165,7 +184,7 @@ check("oracle_authority is the attester", pool.oracleAuthority === ATTESTER_ADDR
 
 // -------------------------------------------------------------------- stage 2
 
-console.log("\nstage 2 — deposit_capital");
+stage("stage 2 — deposit_capital");
 await client.sendTransaction([await depositCapital(h, lp, DEPOSIT)]);
 pool = await readPool(h);
 report("after deposit_capital", pool);
@@ -174,108 +193,124 @@ check("shares minted 1:1", pool.totalShares === DEPOSIT);
 
 // -------------------------------------------------------------------- stage 3
 
-console.log("\nstage 3 — buy_policy");
+stage("stage 3 — get_quote + buy_policy");
 const expectedDelivery = (await chainNow()) + BigInt(QUOTED_TRANSIT);
 const deadline = expectedDelivery + BigInt(GRACE);
 
-const buy = async (policyId: bigint) => [
+/** `get_quote` then `buy_policy`: the underwriter authors the terms, the buyer accepts them. */
+const quoteAndBuy = async (policyId: bigint, expected: bigint) => [
   await getQuote(h, admin, {
     quoteId: policyId,
     shipmentId: 27n,
-    expectedDelivery,
+    expectedDelivery: expected,
     gracePeriod: BigInt(GRACE),
     payoutAmount: PAYOUT,
     premiumAmount: PREMIUM,
     buyer: OPEN_BUYER,
-    expiresAt: expectedDelivery,
+    expiresAt: expected,
   }),
   await buyPolicy(h, shipper, { policyId, quoteId: policyId }),
 ];
 
-await client.sendTransaction(await buy(1n));
+const announce = (policyId: bigint, expected: bigint) => {
+  console.log(`  ${bold("get_quote")}   quote ${policyId}: payout ${usdc(PAYOUT)}, premium ${usdc(PREMIUM)}, fee ${FEE_BPS / 100}% (${usdc(FEE_AMOUNT)})`);
+  console.log(`  ${bold("buy_policy")}  policy ${policyId}: ${usdc(PAYOUT)} locked, ${usdc(PREMIUM)} premium paid by the shipper`);
+  console.log(`  ${dim(`deadline     ${iso(expected + BigInt(GRACE))} (quoted ${iso(expected)} + ${GRACE / DAY}d grace)`)}`);
+};
+
+await client.sendTransaction(await quoteAndBuy(1n, expectedDelivery));
+announce(1n, expectedDelivery);
 pool = await readPool(h);
 report("after buy_policy", pool);
 check(`payout locked ${usdc(PAYOUT)}`, pool.totalLockedRisk === PAYOUT);
-check(`premium credited net of ${FEE_BPS}bps fee`, pool.totalFees === (PREMIUM * BigInt(FEE_BPS)) / 10_000n);
-console.log(`\n  deadline ${iso(deadline)} (quoted ${iso(expectedDelivery)} + ${GRACE / DAY}d grace)`);
+check(`premium credited net of ${FEE_BPS}bps fee`, pool.totalFees === FEE_AMOUNT);
 
-// ----------------------------------------------------------------- scenarios
+// -------------------------------------------------------------- case a: on time
 
-const scenarios = [
-  { name: "late arrival → payout", id: 2n, offset: 5 * DAY, pays: true },
-  { name: "on-time arrival → no payout", id: 3n, offset: -2 * DAY, pays: false },
-];
-
-for (const s of scenarios) {
-  console.log(`\nscenario — ${s.name}`);
-
-  // Each scenario re-quotes from the current chain time, because the previous
-  // iteration travelled the clock forward.
-  const quoted = (await chainNow()) + BigInt(QUOTED_TRANSIT);
-  const due = quoted + BigInt(GRACE);
-  const buyNow = async (policyId: bigint) => [
-    await getQuote(h, admin, {
-      quoteId: policyId,
-      shipmentId: 27n,
-      expectedDelivery: quoted,
-      gracePeriod: BigInt(GRACE),
-      payoutAmount: PAYOUT,
-      premiumAmount: PREMIUM,
-      buyer: OPEN_BUYER,
-      expiresAt: quoted,
-    }),
-    await buyPolicy(h, shipper, { policyId, quoteId: policyId }),
-  ];
-
-  await client.sendTransaction(await buyNow(s.id));
-  const before = await readPool(h);
-
-  // Move the runtime clock past the deadline. This writes the Clock sysvar, so
-  // `settle_policy`'s maturity gate sees it.
-  client.surfnet.timeTravelToTimestamp((Number(due) + DAY) * 1000);
-  const arrival = due + BigInt(s.offset);
-
-  const { instructions } = await deliveryInstructions(h, {
+console.log(`\n${bold(yellow("case a — the shipment is not late → no payout"))}`);
+// Policy 1 is the one bought in stage 3, so this case settles it: on an on-time
+// arrival the pool releases the whole lock and nothing leaves the treasury.
+const onTimeArrival = expectedDelivery - BigInt(DAY);
+// Move the runtime clock past the deadline. This writes the Clock sysvar, so
+// `settle_policy`'s maturity gate sees it.
+client.surfnet.timeTravelToTimestamp((Number(deadline) + DAY) * 1000);
+await client.sendTransaction(
+  (await deliveryInstructions(h, {
     privateKey: ATTESTER_KEY,
     publicKey: ATTESTER_PUBKEY,
     shipmentId: 27n,
-    actualDelivery: arrival,
+    actualDelivery: onTimeArrival,
     terminalCode: 4201n,
-    nonce: s.id,
+    nonce: 1n,
     crank: admin,
     insured: shipper.address,
-  });
+  })).instructions,
+);
+const afterOnTime = await readPool(h);
+// Settlement closes the policy PDA: the account is gone, and the terminal
+// record lives in the PolicyClosed event (CHA-18).
+const closedOnTime = await client.rpc
+  .getAccountInfo(await policyPda(h.programId, h.config, 1n))
+  .send();
+console.log(dim(`  arrival ${iso(onTimeArrival)} (deadline ${iso(deadline)}, on time)`));
+report("after settle_policy", afterOnTime);
+check("policy closed", closedOnTime.value === null);
+check("lock released — no risk outstanding", afterOnTime.totalLockedRisk === 0n);
+check("capital unchanged", afterOnTime.totalCapital === pool.totalCapital);
+check(
+  `whole capital is free — ${usdc(afterOnTime.totalCapital)}`,
+  afterOnTime.totalCapital - afterOnTime.totalLockedRisk === afterOnTime.totalCapital,
+);
 
-  await client.sendTransaction(instructions);
+// ----------------------------------------------------------------- case b: late
 
-  const after = await readPool(h);
-  // Settlement closes the policy PDA: the account is gone, and the terminal
-  // record lives in the PolicyClosed event (CHA-18).
-  const closed = await client.rpc
-    .getAccountInfo(await policyPda(h.programId, h.config, s.id))
-    .send();
-
-  console.log(`  arrival ${iso(arrival)} (deadline ${iso(due)}, ${s.offset > 0 ? "+" : ""}${s.offset / DAY}d)`);
-  report("after settle_policy", after);
-  check("policy closed", closed.value === null);
-  check("lock released", after.totalLockedRisk === before.totalLockedRisk - PAYOUT);
-  check(
-    s.pays ? "capital debited by the payout" : "capital unchanged",
-    s.pays ? after.totalCapital === before.totalCapital - PAYOUT : after.totalCapital === before.totalCapital,
-  );
-}
+console.log(`\n${bold(yellow("case b — the shipment is late → payout"))}`);
+// A fresh policy, quoted from the current chain time, then an arrival five days
+// past its deadline.
+const lateQuoted = (await chainNow()) + BigInt(QUOTED_TRANSIT);
+const lateDue = lateQuoted + BigInt(GRACE);
+await client.sendTransaction(await quoteAndBuy(2n, lateQuoted));
+announce(2n, lateQuoted);
+const beforeLate = await readPool(h);
+client.surfnet.timeTravelToTimestamp((Number(lateDue) + DAY) * 1000);
+const lateArrival = lateDue + 5n * BigInt(DAY);
+await client.sendTransaction(
+  (await deliveryInstructions(h, {
+    privateKey: ATTESTER_KEY,
+    publicKey: ATTESTER_PUBKEY,
+    shipmentId: 27n,
+    actualDelivery: lateArrival,
+    terminalCode: 4201n,
+    nonce: 2n,
+    crank: admin,
+    insured: shipper.address,
+  })).instructions,
+);
+const afterLate = await readPool(h);
+const closedLate = await client.rpc
+  .getAccountInfo(await policyPda(h.programId, h.config, 2n))
+  .send();
+console.log(dim(`  arrival ${iso(lateArrival)} (deadline ${iso(lateDue)}, +5d late)`));
+report("after settle_policy", afterLate);
+check("policy closed", closedLate.value === null);
+check("lock released", afterLate.totalLockedRisk === beforeLate.totalLockedRisk - PAYOUT);
+check(`capital debited by the payout ${usdc(PAYOUT)}`, afterLate.totalCapital === beforeLate.totalCapital - PAYOUT);
 
 // -------------------------------------------------------------------- stage 4
 
-console.log("\nstage 4 — crank settles the remaining matured policy");
-// Policy 1 was bought in stage 3 and never settled. The crank finds it by
+stage("stage 4 — the crank settles a matured policy");
+// A third policy, bought and then matured by time travel. The crank finds it by
 // scanning, asks the source for its arrival, and settles it on time — no manual
-// instruction. The clock is already past its deadline: the scenarios above
-// advanced it, and time travel is forward-only.
+// instruction, and no payout.
+const crankQuoted = (await chainNow()) + BigInt(QUOTED_TRANSIT);
+const crankDue = crankQuoted + BigInt(GRACE);
+await client.sendTransaction(await quoteAndBuy(3n, crankQuoted));
+announce(3n, crankQuoted);
 const openBefore = await readPool(h);
+client.surfnet.timeTravelToTimestamp((Number(crankDue) + DAY) * 1000);
 const source = new SimulatedSource({
   arrivals: {
-    "27": { actualDelivery: expectedDelivery - BigInt(DAY), terminalCode: 4201n },
+    "27": { actualDelivery: crankQuoted - BigInt(DAY), terminalCode: 4201n },
   },
 });
 const { settled, skipped, failed } = await settleMaturedPolicies(h, {
@@ -286,7 +321,7 @@ const { settled, skipped, failed } = await settleMaturedPolicies(h, {
   now: await chainNow(),
   send: (ixs) => client.sendTransaction(ixs),
 });
-check(`crank settled [${settled.join(", ")}]`, settled.length === 1 && settled[0] === 1n);
+check(`crank settled [${settled.join(", ")}]`, settled.length === 1 && settled[0] === 3n);
 check(
   "crank skipped only unsettleable policies",
   skipped.every((s) => s.reason === "immature" || s.reason === "no-arrival"),
@@ -300,7 +335,7 @@ check("no payout", openAfter.totalCapital === openBefore.totalCapital);
 const free = openAfter.totalCapital - openAfter.totalLockedRisk;
 check(`no risk outstanding — free ${usdc(free)} equals total capital`, free === openAfter.totalCapital);
 
-console.log("\nstage 5 — keeper posts a history-batch root");
+stage("stage 5 — keeper posts a history-batch root");
 // Placeholder root: the real Merkle batching over the closed policies lands
 // with the keeper service (CHA-19). This exercises the on-chain Registry path.
 const root = new Uint8Array(32).fill(0xab);
@@ -310,6 +345,8 @@ const registry = await client.rpc
   .send();
 check("registry posted", registry.value !== null);
 
-console.log(failures === 0 ? "\n✓ all checks passed" : `\n✗ ${failures} check(s) FAILED`);
+console.log(
+  failures === 0 ? `\n${bold(green("✓ all checks passed"))}` : `\n${bold(red(`✗ ${failures} check(s) FAILED`))}`,
+);
 client.surfnet.stop();
 process.exit(failures === 0 ? 0 : 1);

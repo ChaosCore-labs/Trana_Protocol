@@ -131,11 +131,11 @@ program checks only the mint's decimals (`decimals == 6`), nothing about its iss
 `cargo nextest run` drives the built `.so` in-process through LiteSVM, so it covers
 every guard and every rejection path without paying fees. `bun run devnet-e2e`
 (`scripts/devnet-e2e.ts`) proves the *deployed* binary on devnet end to end:
-`initialize_pool` → `deposit_capital` → `buy_policy` ×2 → `settle_policy` for a late
-and an on-time arrival → `post_root`, asserting the pool's accounting after each
-step. It cannot time-travel the way the local walkthrough does, so it buys a policy
-whose deadline is 30 seconds out and polls the cluster clock until it passes — the
-script retries on the public RPC's HTTP 429s.
+`initialize_pool` → `deposit_capital` → `get_quote` + `buy_policy` ×2 → `settle_policy`
+for an on-time and then a late arrival → `post_root`, asserting the pool's accounting
+after each step. It cannot time-travel the way the local walkthrough does, so each
+policy is quoted with a deadline 30 seconds out and the script polls the cluster
+clock until it passes — the script retries on the public RPC's HTTP 429s.
 
 ## Interacting on devnet
 

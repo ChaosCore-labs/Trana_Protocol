@@ -6,8 +6,9 @@
  * every outcome. The LiteSVM suite in `programs/freight_delay/tests/` proves the
  * logic in-process; this proves the *deployed* binary on a real cluster, with
  * real fees, real confirmation and the real clock — there is no time travel on
- * devnet, so the run buys a policy whose deadline is seconds away and waits for
- * the chain clock to pass it.
+ * devnet, so each policy is quoted with a deadline seconds away and the run waits
+ * for the chain clock to pass it. Two cases: an on-time arrival that releases the
+ * lock, then a late one that pays.
  *
  *   anchor deploy --provider.cluster devnet
  *   bun run devnet-e2e
@@ -62,13 +63,19 @@ const USDC = 1_000_000n;
 /** `Pubkey::default()`: an open quote, acceptable by any buyer. */
 const OPEN_BUYER = address("11111111111111111111111111111111");
 const DEPOSIT = 500_000n * USDC;
-const LATE_PAYOUT = 100_000n * USDC;
-const LATE_PREMIUM = 10_000n * USDC;
-const ONTIME_PAYOUT = 50_000n * USDC;
-const ONTIME_PREMIUM = 5_000n * USDC;
-/** Seconds between the quote and the deadline: devnet's clock is real time. */
-const QUOTE_AHEAD = 30n;
-const ARRIVAL_OFFSET = 60n;
+/** The on-time policy is the big one; the late one is small. */
+const LATE_PREMIUM = 2_000n * USDC;
+const ONTIME_PREMIUM = 20_000n * USDC;
+/** Delay cover pays a high multiple of the premium: 15×, as in the local walkthrough. */
+const LATE_PAYOUT = 15n * LATE_PREMIUM;
+const ONTIME_PAYOUT = 15n * ONTIME_PREMIUM;
+/** Seconds between the quote and the deadline: devnet's clock is real time, so every
+ * second here is a second the run waits for the deadline. The two sends between the
+ * quote and the buy take ~4s, which has to fit inside it (`expires_at` cannot be
+ * later than `expected_delivery`). */
+const QUOTE_AHEAD = 10n;
+/** How far the attested arrival sits either side of the deadline, within the quote ahead. */
+const ARRIVAL_OFFSET = 5n;
 const CLOCK_BUDGET_MS = 240_000;
 
 const explorer = (path: string) => `https://explorer.solana.com/${path}?cluster=devnet`;
@@ -78,17 +85,21 @@ const check = (label: string, ok: boolean) => {
   console.log(`    ${ok ? green("ok  ") : red("FAIL")}  ${label}`);
   if (!ok) failures++;
 };
-const paint = (code: string, text: string) => `\x1b[${code}m${text}\x1b[0m`;
+// ANSI colour, no dependency. Off when stdout is not a terminal (or NO_COLOR is
+// set), so piped output stays plain.
+const useColor = process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
+const paint = (code: string, text: string) => (useColor ? `\x1b[${code}m${text}\x1b[0m` : text);
 const green = (t: string) => paint("32;1", t);
 const red = (t: string) => paint("31;1", t);
 const cyan = (t: string) => paint("36;1", t);
+const yellow = (t: string) => paint("33;1", t);
 const dim = (t: string) => paint("2", t);
 
 const usdc = (v: bigint) =>
   `${(Number(v) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2 })} USDC`;
 
 function report(label: string, pool: Awaited<ReturnType<typeof readPool>>) {
-  console.log(`  ${label}`);
+  console.log(`  ${cyan(label)}`);
   console.log(`    total_capital      ${usdc(pool.totalCapital).padStart(16)}`);
   console.log(`    total_locked_risk  ${usdc(pool.totalLockedRisk).padStart(16)}`);
   console.log(`    free_capital       ${usdc(pool.totalCapital - pool.totalLockedRisk).padStart(16)}`);
@@ -227,58 +238,39 @@ report("after deposit_capital", pool);
 check("capital equals deposit", pool.totalCapital === DEPOSIT);
 check("shares minted 1:1", pool.totalShares === DEPOSIT);
 
-// -------------------------------------------------------------------- stage 3
+// -------------------------------------------- helpers: quote + buy, and settle
 
-console.log(cyan("\nstage 3 — buy_policy (deadline 30s out, on the real clock)"));
-const expectedDelivery = (await chainNow()) + QUOTE_AHEAD;
-const deadline = expectedDelivery;
-check("quote is in the future", expectedDelivery > (await chainNow()));
-
-for (const [id, payout, premium] of [
-  [1n, LATE_PAYOUT, LATE_PREMIUM],
-  [2n, ONTIME_PAYOUT, ONTIME_PREMIUM],
-] as const) {
+/** `get_quote` then `buy_policy`, printing the terms the underwriter authored. */
+async function quoteAndBuy(id: bigint, expected: bigint, payout: bigint, premium: bigint) {
+  console.log(
+    `  ${cyan("get_quote")}   quote ${id}: payout ${usdc(payout)}, premium ${usdc(premium)}, fee ${FEE_BPS / 100}% (${usdc((premium * BigInt(FEE_BPS)) / 10_000n)})`,
+  );
   await send([
     await getQuote(h, admin, {
       quoteId: id,
       shipmentId: 27n,
-      expectedDelivery,
+      expectedDelivery: expected,
       gracePeriod: 0n,
       payoutAmount: payout,
       premiumAmount: premium,
       buyer: OPEN_BUYER,
-      expiresAt: expectedDelivery,
+      expiresAt: expected,
     }),
   ]);
+  console.log(
+    `  ${cyan("buy_policy")}  policy ${id}: ${usdc(payout)} locked, ${usdc(premium)} premium paid by the shipper`,
+  );
   await send([await buyPolicy(h, shipper, { policyId: id, quoteId: id })]);
+  console.log(`  ${dim(`deadline ${new Date(Number(expected) * 1000).toISOString()}`)}`);
 }
-pool = await readPool(h);
-report("after buy_policy ×2", pool);
-const lockedBoth = LATE_PAYOUT + ONTIME_PAYOUT;
-check(`payout risk locked ${usdc(lockedBoth)}`, pool.totalLockedRisk === lockedBoth);
-check(
-  `fees taken at ${FEE_BPS}bps`,
-  pool.totalFees === ((LATE_PREMIUM + ONTIME_PREMIUM) * BigInt(FEE_BPS)) / 10_000n,
-);
-console.log(`  deadline ${new Date(Number(deadline) * 1000).toISOString()}`);
 
-// -------------------------------------------------------------------- stage 4
-
-console.log(cyan("\nstage 4 — wait for the devnet clock, then settle both policies"));
-const reached = await waitForClock(deadline);
-check(`cluster clock reached the deadline (now ${reached})`, reached >= deadline);
-
-// The offsets make one arrival late (pays) and one early (pays nothing), while both
-// release their locked risk.
-for (const [id, offset] of [
-  [1n, ARRIVAL_OFFSET],
-  [2n, -ARRIVAL_OFFSET],
-] as const) {
+/** Settle one policy against a signed arrival; the PDA must be gone afterwards. */
+async function settle(id: bigint, arrival: bigint) {
   const { instructions } = await deliveryInstructions(h, {
     privateKey: ATTESTER_KEY,
     publicKey: ATTESTER_PUBKEY,
     shipmentId: 27n,
-    actualDelivery: deadline + offset,
+    actualDelivery: arrival,
     terminalCode: 4201n,
     nonce: id,
     crank: admin,
@@ -289,19 +281,58 @@ for (const [id, offset] of [
   check(`policy ${id} settled and its PDA closed`, closed.value === null);
 }
 
-pool = await readPool(h);
-report("after settle_policy ×2", pool);
-const netPremiums =
-  (LATE_PREMIUM + ONTIME_PREMIUM) - ((LATE_PREMIUM + ONTIME_PREMIUM) * BigInt(FEE_BPS)) / 10_000n;
-check("no risk outstanding", pool.totalLockedRisk === 0n);
+// -------------------------------------------------------------------- stage 3
+
+console.log(cyan("\nstage 3 — get_quote + buy_policy"));
+
+console.log(yellow("\ncase a — the shipment is not late → no payout"));
+const onTimeDue = (await chainNow()) + QUOTE_AHEAD;
+check("quote is in the future", onTimeDue > (await chainNow()));
+await quoteAndBuy(1n, onTimeDue, ONTIME_PAYOUT, ONTIME_PREMIUM);
+const boughtOnTime = await readPool(h);
+report("after buy_policy", boughtOnTime);
+check(`payout risk locked ${usdc(ONTIME_PAYOUT)}`, boughtOnTime.totalLockedRisk === ONTIME_PAYOUT);
 check(
-  "the late policy paid and the on-time one did not",
-  pool.totalCapital === DEPOSIT + netPremiums - LATE_PAYOUT,
+  `fees taken at ${FEE_BPS}bps`,
+  boughtOnTime.totalFees === (ONTIME_PREMIUM * BigInt(FEE_BPS)) / 10_000n,
 );
 
-// -------------------------------------------------------------------- stage 5
+// No time travel on devnet: wait on the real cluster clock for the deadline.
+const onTimeReached = await waitForClock(onTimeDue);
+check(`cluster clock reached the deadline (now ${onTimeReached})`, onTimeReached >= onTimeDue);
+// Arrival inside the deadline (grace is 0) — it pays nothing, but frees the lock.
+// The offset is seconds, not a minute: the whole quote-to-deadline window is 10s.
+await settle(1n, onTimeDue - ARRIVAL_OFFSET);
+pool = await readPool(h);
+report("after settle_policy", pool);
+check("lock released — no risk outstanding", pool.totalLockedRisk === 0n);
+check("capital unchanged — no payout on an on-time arrival", pool.totalCapital === boughtOnTime.totalCapital);
+check(
+  `whole capital is free — ${usdc(pool.totalCapital)}`,
+  pool.totalCapital - pool.totalLockedRisk === pool.totalCapital,
+);
 
-console.log(cyan("\nstage 5 — keeper posts a history-batch root"));
+// -------------------------------------------------------------------- case b
+
+console.log(yellow("\ncase b — the shipment is late → payout"));
+const lateDue = (await chainNow()) + QUOTE_AHEAD;
+await quoteAndBuy(2n, lateDue, LATE_PAYOUT, LATE_PREMIUM);
+const boughtLate = await readPool(h);
+report("after buy_policy", boughtLate);
+check(`payout risk locked ${usdc(LATE_PAYOUT)}`, boughtLate.totalLockedRisk === LATE_PAYOUT);
+
+const lateReached = await waitForClock(lateDue);
+check(`cluster clock reached the deadline (now ${lateReached})`, lateReached >= lateDue);
+// Five seconds past the deadline: the payout leaves the treasury.
+await settle(2n, lateDue + ARRIVAL_OFFSET);
+pool = await readPool(h);
+report("after settle_policy", pool);
+check("lock released — no risk outstanding", pool.totalLockedRisk === 0n);
+check(`capital debited by the payout ${usdc(LATE_PAYOUT)}`, pool.totalCapital === boughtLate.totalCapital - LATE_PAYOUT);
+
+// -------------------------------------------------------------------- stage 4
+
+console.log(cyan("\nstage 4 — keeper posts a history-batch root"));
 const root = new Uint8Array(32).fill(0xab);
 await send([await postRoot(h, admin, 1n, root, 2n)]);
 const registry = await client.rpc.getAccountInfo(await registryPda(programId, config, 1n)).send();
