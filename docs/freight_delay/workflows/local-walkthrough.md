@@ -32,6 +32,7 @@ in-process, deploys the program, and then:
 | 3b | `get_quote` + `buy_policy` + `settle_policy` | **case b, the shipment is late**: a second policy arrives five days past its deadline, capital debited by the payout |
 | 4 | crank | a third policy is bought and matured by time travel; the crank scans for it, asks the source for its arrival, settles it on time and frees the capital |
 | 5 | `post_root` | the keeper posts a batch root; the registry account exists |
+| 6 | `withdraw_capital` | the LP redeems in two calls — half the shares, then the rest: shares price off the pool's capital per share, the treasury pays the USDC out, and the last share closes the position |
 
 Each stage prints `total_capital`, `total_locked_risk`, `free_capital` and
 `total_fees`, so the accounting is readable without a debugger. The script exits

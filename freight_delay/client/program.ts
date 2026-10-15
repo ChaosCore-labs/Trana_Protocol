@@ -29,6 +29,7 @@ import {
   getInitializePoolInstruction,
   getPostRootInstruction,
   getSettlePolicyInstruction,
+  getWithdrawCapitalInstruction,
 } from "./generated/index.ts";
 
 /** The ed25519 precompile id — the only address the ecosystem ships no package for. */
@@ -111,7 +112,35 @@ export async function depositCapital(
 }
 
 /**
- * Author terms as the pool's underwriter. `buyer` of the default address is an
+ * Redeem `shares` for the pool's USDC. Shares price off the pool's current
+ * capital per share, so the premiums earned (and any payout paid) are priced in.
+ */
+export async function withdrawCapital(
+  h: Harness,
+  lp: KeyPairSigner,
+  shares: bigint,
+): Promise<Instruction> {
+  return getWithdrawCapitalInstruction(
+    {
+      lp,
+      config: h.config,
+      usdcMint: h.usdcMint,
+      treasury: h.treasury,
+      lpUsdc: await ataFor(lp.address, h.usdcMint),
+      lpPosition: await lpPositionPda(h.programId, h.config, lp.address),
+      shares,
+    },
+    forProgram(h),
+  );
+}
+
+/** An SPL account's balance in base units — used to prove the money actually moved. */
+export async function readTokenBalance(h: Harness, account: Address): Promise<bigint> {
+  const res: any = await h.client.rpc.getAccountInfo(account, { encoding: "jsonParsed" }).send();
+  return BigInt(res.value.data.parsed.info.tokenAmount.amount);
+}
+
+/** `buyer` of the default address is an
  * open quote any buyer may accept; the premium is the seller's number, never the
  * caller of `buy_policy`.
  */

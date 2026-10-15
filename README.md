@@ -46,7 +46,7 @@ Everything green is reproducible with two commands:
 | Evidence | Command | Result |
 |---|---|---|
 | LiteSVM suite (in-process, the same `.so` the deploy ships) | `anchor build && cargo nextest run` | **45 passed**, 0 failed |
-| Devnet end-to-end: `initialize_pool` → `deposit_capital` → `get_quote` + `buy_policy` ×2 → `settle_policy` (on-time + late) → `post_root` | `bun run devnet-e2e` | **all checks passed on devnet** |
+| Devnet end-to-end: `initialize_pool` → `deposit_capital` → `get_quote` + `buy_policy` ×2 → `settle_policy` (on-time + late) → `post_root` → `withdraw_capital` | `bun run devnet-e2e` | **all checks passed on devnet** |
 
 ![LiteSVM suite: 45 tests passed](freight_delay/assets/tests-nextest.webp)
 

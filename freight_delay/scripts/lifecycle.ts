@@ -30,11 +30,14 @@ import {
   depositCapital,
   getQuote,
   initializePool,
+  lpPositionPda,
   policyPda,
   postRoot,
   readPool,
+  readTokenBalance,
   registryPda,
   treasuryPda,
+  withdrawCapital,
   type Harness,
 } from "../client/program.ts";
 
@@ -344,6 +347,57 @@ const registry = await client.rpc
   .getAccountInfo(await registryPda(programId, config, 1n))
   .send();
 check("registry posted", registry.value !== null);
+
+// -------------------------------------------------------------------- stage 6
+
+stage("stage 6 — withdraw_capital");
+// The LP redeems in two calls: half the shares, then the rest. Shares redeem at
+// the pool's current capital per share, so the premiums earned — and the payout
+// paid out of capital — are priced in. The second call burns the last share.
+const beforeExit = await readPool(h);
+const treasuryBeforeExit = await readTokenBalance(h, treasury);
+const lpUsdc = await ataFor(lp.address, usdcMint.address);
+const lpBeforeExit = await readTokenBalance(h, lpUsdc);
+
+const half = beforeExit.totalShares / 2n;
+const remainingShares = beforeExit.totalShares - half;
+// Same floor as the program: shares * total_capital / total_shares.
+const expectedFirst = (half * beforeExit.totalCapital) / beforeExit.totalShares;
+
+await client.sendTransaction([await withdrawCapital(h, lp, half)]);
+const afterHalf = await readPool(h);
+report("after withdraw_capital (half the shares)", afterHalf);
+check(
+  `capital debited by ${usdc(expectedFirst)}`,
+  afterHalf.totalCapital === beforeExit.totalCapital - expectedFirst,
+);
+check(`shares burned — ${usdc(remainingShares)} left`, afterHalf.totalShares === remainingShares);
+const stillInvested = await client.rpc
+  .getAccountInfo(await lpPositionPda(programId, config, lp.address))
+  .send();
+check("position still open", stillInvested.value !== null);
+
+await client.sendTransaction([await withdrawCapital(h, lp, remainingShares)]);
+const afterExit = await readPool(h);
+report("after withdraw_capital (the rest)", afterExit);
+check("pool emptied — capital and shares 0", afterExit.totalCapital === 0n && afterExit.totalShares === 0n);
+const positionGone = await client.rpc
+  .getAccountInfo(await lpPositionPda(programId, config, lp.address))
+  .send();
+check("position closed, rent returned", positionGone.value === null);
+const treasuryAfterExit = await readTokenBalance(h, treasury);
+const lpAfterExit = await readTokenBalance(h, lpUsdc);
+check(
+  `treasury paid out ${usdc(treasuryBeforeExit - treasuryAfterExit)}`,
+  treasuryBeforeExit - treasuryAfterExit === beforeExit.totalCapital,
+);
+check(
+  `LP received ${usdc(lpAfterExit - lpBeforeExit)}`,
+  lpAfterExit - lpBeforeExit === beforeExit.totalCapital,
+);
+console.log(
+  dim(`  LP deposited ${usdc(DEPOSIT)} and redeemed ${usdc(beforeExit.totalCapital)}`),
+);
 
 console.log(
   failures === 0 ? `\n${bold(green("✓ all checks passed"))}` : `\n${bold(red(`✗ ${failures} check(s) FAILED`))}`,
